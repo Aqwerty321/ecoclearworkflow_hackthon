@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useAppStore } from "@/lib/store";
@@ -6,18 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Shield, ArrowRight, Github, Leaf, FileCheck, Users, Zap } from "lucide-react";
+import { Shield, ArrowRight, ArrowLeft } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { GradientText } from "@/components/ui/gradient-text";
-import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 
-export default function Home() {
-  const { login, currentUser, hydrated, firebaseConnected } = useAppStore();
+export default function RegisterPage() {
+  const { register, currentUser, hydrated } = useAppStore();
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -28,36 +28,30 @@ export default function Home() {
     }
   }, [currentUser, hydrated, router]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError("");
 
-    const loginEmail = firebaseConnected
-      ? email
-      : email.includes("@") ? email : `${email}@builder.com`;
+    if (password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
 
-    const user = await login(loginEmail, password);
+    setLoading(true);
+    const user = await register(name, email, password);
     if (user) {
       router.push("/dashboard");
     } else {
-      setError(
-        firebaseConnected
-          ? "Invalid email or password."
-          : "User not found. Try: admin@ecoclear.gov, john@builder.com, sarah@ecoclear.gov, or mike@ecoclear.gov"
-      );
+      setError("Registration failed. Email may already be in use.");
     }
     setLoading(false);
   };
 
   if (!hydrated) return null;
-
-  const features = [
-    { icon: FileCheck, title: "Proponents", desc: "Submit and track EC applications in real-time." },
-    { icon: Users, title: "Authorities", desc: "Streamlined scrutiny and meeting management." },
-    { icon: Leaf, title: "AI-Powered", desc: "Smart scrutiny analysis and document flagging." },
-    { icon: Zap, title: "Real-Time", desc: "Live status updates and instant notifications." },
-  ];
 
   return (
     <div className="fixed inset-0 overflow-auto">
@@ -71,85 +65,79 @@ export default function Home() {
       </div>
 
       <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-8 lg:gap-12 items-center min-h-screen py-8 md:py-12 px-4 md:px-6">
-        {/* Hero Section */}
         <div className="space-y-6 animate-fade-in">
-          <div 
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium text-sm animate-slide-up"
-          >
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-medium text-sm animate-slide-up">
             <Shield className="h-4 w-4" />
             Government Authorized System
           </div>
-
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-headline font-bold tracking-tight leading-[1.1] animate-slide-up delay-100">
             <GradientText className="font-extrabold">EcoClear</GradientText>
             <br />
             <span className="text-foreground/80 font-light">Workflow</span>
           </h1>
-
           <p className="text-lg text-muted-foreground max-w-lg animate-slide-up delay-200">
-            A secure, AI-powered platform for environmental clearance applications, scrutiny, and committee decision-making.
+            Register as a Project Proponent to submit environmental clearance applications through our secure platform.
           </p>
-
-          <div className="grid grid-cols-2 gap-3 animate-slide-up delay-300">
-            {features.map((f, i) => (
-              <SpotlightCard key={f.title} className="p-4">
-                <div className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-primary/10 text-primary shrink-0">
-                    <f.icon className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold text-sm text-foreground">{f.title}</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">{f.desc}</p>
-                  </div>
-                </div>
-              </SpotlightCard>
-            ))}
-          </div>
-          
-          <div className="pt-2 animate-slide-up delay-400">
-            <Button variant="outline" asChild className="gap-2 rounded-full">
-              <a href="https://github.com/lalitheswar09-data" target="_blank" rel="noopener noreferrer">
-                <Github className="h-4 w-4" />
-                View Developer GitHub
-              </a>
-            </Button>
+          <div className="p-5 rounded-xl border bg-card/80 backdrop-blur-sm shadow-sm animate-slide-up delay-300">
+            <h3 className="font-semibold text-foreground">Project Proponent Registration</h3>
+            <p className="text-sm text-muted-foreground mt-1">
+              After registration, you can submit new environmental clearance applications, upload documents, track your application progress, and make payments.
+            </p>
           </div>
         </div>
 
-        {/* Login Card */}
         <div className="animate-scale-in delay-200">
           <Card className="w-full max-w-md mx-auto glass-strong shadow-2xl shadow-primary/5 border-white/20 dark:border-white/10">
             <CardHeader className="space-y-1 pb-4">
-              <CardTitle className="text-2xl font-bold">Sign In</CardTitle>
-              <CardDescription>Enter your official credentials to access the portal</CardDescription>
+              <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+              <CardDescription>Register as a new Project Proponent</CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleLogin} className="space-y-4">
+              <form onSubmit={handleRegister} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Full Name</Label>
+                  <Input
+                    id="name"
+                    placeholder="Your full name"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    required
+                    className="h-11 transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
                 <div className="space-y-2">
                   <Label htmlFor="email">Email Address</Label>
-                  <Input 
-                    id="email" 
-                    placeholder="email@organization.gov" 
+                  <Input
+                    id="email"
+                    type="email"
+                    placeholder="email@organization.com"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
                     className="h-11 transition-all duration-200 focus:ring-2 focus:ring-primary/20"
                   />
-                  {!firebaseConnected && (
-                    <p className="text-[10px] text-muted-foreground italic">
-                      Demo mode: admin@ecoclear.gov, john@builder.com, sarah@ecoclear.gov, mike@ecoclear.gov
-                    </p>
-                  )}
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="password">Password</Label>
-                  <Input 
-                    id="password" 
-                    type="password" 
-                    placeholder="••••••••" 
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Minimum 6 characters"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required 
+                    required
+                    className="h-11 transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirmPassword">Confirm Password</Label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="Re-enter password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    required
                     className="h-11 transition-all duration-200 focus:ring-2 focus:ring-primary/20"
                   />
                 </div>
@@ -157,16 +145,17 @@ export default function Home() {
                   <p className="text-sm text-destructive font-medium animate-shake">{error}</p>
                 )}
                 <ShimmerButton className="w-full font-bold h-12 text-base" disabled={loading}>
-                  {loading ? "Authenticating..." : "Login to Workspace"}
+                  {loading ? "Creating Account..." : "Register"}
                   {!loading && <ArrowRight className="ml-2 h-4 w-4" />}
                 </ShimmerButton>
               </form>
             </CardContent>
             <CardFooter className="flex justify-center border-t border-border/50 pt-4">
               <p className="text-sm text-muted-foreground">
-                New proponent?{" "}
-                <Link href="/register" className="text-primary font-semibold hover:underline transition-colors">
-                  Register here
+                Already have an account?{" "}
+                <Link href="/" className="text-primary font-semibold hover:underline transition-colors">
+                  <ArrowLeft className="inline h-3 w-3 mr-1" />
+                  Sign in
                 </Link>
               </p>
             </CardFooter>

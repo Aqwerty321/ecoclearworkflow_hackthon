@@ -44,10 +44,30 @@ export interface Document {
   uploadedAt: string;
 }
 
+export interface Payment {
+  id: string;
+  applicationId: string;
+  amount: number;
+  paymentStatus: 'pending' | 'paid';
+  paymentMethod: string;
+  transactionId?: string;
+  paidAt?: string;
+}
+
 export interface Sector {
   id: string;
   name: string;
   description: string;
+}
+
+export interface Template {
+  id: string;
+  templateName: string;
+  content: string;
+  type: 'document' | 'gist';
+  category?: Category;
+  createdAt: string;
+  updatedAt?: string;
 }
 
 export interface EDSComment {
@@ -57,6 +77,32 @@ export interface EDSComment {
   authorName: string;
   comment: string;
   createdAt: string;
+}
+
+export interface MinutesOfMeeting {
+  id: string;
+  applicationId: string;
+  discussionSummary: string;
+  committeeDecision: string;
+  conditions: string[];
+  recommendations?: string[];
+  finalDocumentUrl?: string;
+  finalizedAt?: string;
+}
+
+// Valid status transitions
+const VALID_TRANSITIONS: Record<ApplicationStatus, ApplicationStatus[]> = {
+  Draft: ['Submitted'],
+  Submitted: ['UnderScrutiny'],
+  UnderScrutiny: ['EDS', 'Referred'],
+  EDS: ['Submitted'],
+  Referred: ['MoMGenerated'],
+  MoMGenerated: ['Finalized'],
+  Finalized: [],
+};
+
+export function isValidTransition(from: ApplicationStatus, to: ApplicationStatus): boolean {
+  return VALID_TRANSITIONS[from]?.includes(to) ?? false;
 }
 
 export interface MeetingGist {

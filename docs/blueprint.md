@@ -1,5 +1,30 @@
 # **App Name**: EcoClear Workflow
 
+> Last updated: March 2026 — Full-scale UI overhaul completed (dark mode, animations, ReactBits-inspired components, responsive redesign across all pages).
+
+## UI Design System (v2 — March 2026)
+
+### Design Direction
+Hybrid "Modern Gov-tech + Corporate Enterprise" — clean data-dense layouts with polished animations and full dark mode support.
+
+### Custom Animated Primitives (`src/components/ui/`)
+- **AnimatedContainer** — IntersectionObserver-triggered entrance animations (fade-in, slide-up, scale-in). Supports `delay` and `once` props.
+- **StaggerChildren** — wraps children in sequential AnimatedContainers for list entrance effects.
+- **CountUp** — animated number counter with ease-out cubic easing, IntersectionObserver triggered.
+- **SpotlightCard** — card with a 400px radial gradient that follows the cursor on hover.
+- **GradientText** — animated gradient sweep text (135deg, blue→teal→green).
+- **ShimmerButton** — extends shadcn Button with a shine sweep overlay on hover.
+- **PageSkeleton** — `DashboardSkeleton`, `TableSkeleton`, `FormSkeleton`, `DetailSkeleton` components.
+- **ThemeToggle** — Sun/Moon toggle using `next-themes`, hydration-safe.
+
+### Animation Keyframes (globals.css)
+`fade-in`, `slide-up`, `scale-in`, `float`, `shimmer`, `pulse-soft`, `gradient-shift`, `shake`, `draw-line`, `spin-slow` — all defined as CSS keyframes with Tailwind utility classes.
+
+### Dark Mode
+Full dark mode via `next-themes` (`ThemeProvider` in root layout). All pages use HSL CSS variables with complete dark overrides. Role badge colors, status pills, and card borders all have `dark:` variants.
+
+---
+
 ## Core Features:
 
 - Secure User Authentication & Registration: User registration for Project Proponents and email/password login for all roles, utilizing Firebase Authentication for secure session management.

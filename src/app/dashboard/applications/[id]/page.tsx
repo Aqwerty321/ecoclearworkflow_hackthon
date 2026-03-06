@@ -7,12 +7,33 @@ import { ApplicationTimeline } from "@/components/ApplicationTimeline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3 } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw } from "lucide-react";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { scrutinyDocumentSummaryAndFlagging } from "@/ai/flows/scrutiny-document-summary-and-flagging";
 import { generateMeetingGist } from "@/ai/flows/generate-meeting-gist";
+import { storage } from "@/lib/firebase";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { cn } from "@/lib/utils";
+import { AnimatedContainer } from "@/components/ui/animated-container";
+import { DetailSkeleton } from "@/components/ui/page-skeleton";
+
+const DOCUMENT_TYPES = [
+  "Environmental Report",
+  "Land Document",
+  "Pollution Analysis",
+  "EIA Report",
+  "NOC Certificate",
+  "Site Plan",
+  "Risk Assessment",
+  "Other",
+];
 
 export default function ApplicationDetailPage() {
   const params = useParams();
@@ -20,36 +41,121 @@ export default function ApplicationDetailPage() {
   const { 
     applications, 
     documents, 
+    comments,
     currentUser, 
     updateApplicationStatus, 
     updatePaymentStatus,
     addDocument,
+    addComment,
     upsertGist,
-    gists
+    gists,
+    firebaseConnected
   } = useAppStore();
   const { toast } = useToast();
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  
+  // Upload state
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploadDocType, setUploadDocType] = useState(DOCUMENT_TYPES[0]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // EDS comment state
+  const [edsDialogOpen, setEdsDialogOpen] = useState(false);
+  const [edsComment, setEdsComment] = useState("");
+  
+  // Payment state
+  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [paymentStep, setPaymentStep] = useState(0);
 
   const application = applications.find(a => a.id === id);
   const appDocs = documents.filter(d => d.applicationId === id);
-  const appGist = gists.find(g => g.applicationId === id);
+  const appComments = comments.filter(c => c.applicationId === id);
 
-  if (!application) return <div>Application not found</div>;
+  if (!application) return (
+    <div className="flex items-center justify-center h-64">
+      <div className="text-center">
+        <div className="mx-auto w-16 h-16 rounded-full bg-muted/50 flex items-center justify-center mb-4">
+          <FileText className="h-8 w-8 opacity-30" />
+        </div>
+        <p className="text-muted-foreground font-medium">Application not found</p>
+      </div>
+    </div>
+  );
 
   const isProponent = currentUser?.role === 'Project Proponent';
   const isScrutiny = currentUser?.role === 'Scrutiny Team';
   const isMoM = currentUser?.role === 'MoM Team';
+  const isFinalized = application.status === 'Finalized';
 
   const handleAction = (newStatus: any, message: string) => {
     updateApplicationStatus(application.id, newStatus);
     toast({ title: "Status Updated", description: message });
   };
 
+  // Document upload handler
+  const handleFileUpload = async () => {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) {
+      toast({ variant: "destructive", title: "Error", description: "Please select a file." });
+      return;
+    }
+    
+    setUploading(true);
+    try {
+      if (firebaseConnected) {
+        const storageRef = ref(storage!, `documents/${application.id}/${Date.now()}_${file.name}`);
+        await uploadBytes(storageRef, file);
+        const downloadUrl = await getDownloadURL(storageRef);
+        addDocument({ 
+          applicationId: application.id, 
+          name: file.name, 
+          type: uploadDocType, 
+          fileUrl: downloadUrl 
+        });
+      } else {
+        // Demo mode — simulated upload
+        addDocument({ 
+          applicationId: application.id, 
+          name: file.name, 
+          type: uploadDocType, 
+          fileUrl: '#demo' 
+        });
+      }
+      toast({ title: "Document Uploaded", description: `${file.name} uploaded successfully.` });
+      setUploadDialogOpen(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    } catch {
+      toast({ variant: "destructive", title: "Upload Failed", description: "Could not upload the document." });
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  // EDS request with comment
+  const handleRequestEDS = () => {
+    if (!edsComment.trim()) {
+      toast({ variant: "destructive", title: "Error", description: "Please provide a comment about missing documents." });
+      return;
+    }
+    addComment({
+      applicationId: application.id,
+      authorId: currentUser!.id,
+      authorName: currentUser!.name,
+      comment: edsComment,
+    });
+    handleAction('EDS', 'Information request sent to proponent.');
+    setEdsDialogOpen(false);
+    setEdsComment("");
+  };
+
+  // Payment simulation
   const handlePayment = () => {
     updatePaymentStatus(application.id, 'paid');
-    toast({ title: "Payment Successful", description: "Application fee marked as paid." });
+    setPaymentStep(2);
+    toast({ title: "Payment Successful", description: "Application fee has been paid via UPI." });
   };
 
   const runScrutinyAI = async () => {
@@ -59,14 +165,12 @@ export default function ApplicationDetailPage() {
     }
     setAnalyzing(true);
     try {
-      // Mocked since real data URIs aren't available easily in demo state
-      // But we'll call the flow anyway to show it works
       const res = await scrutinyDocumentSummaryAndFlagging({
         projectDescription: application.description,
         documentUrls: ["data:text/plain;base64,U2FtcGxlIERvY3VtZW50"]
       });
       setAnalysisResult(res);
-    } catch (e) {
+    } catch {
       toast({ variant: "destructive", title: "AI Error", description: "Failed to run AI analysis." });
     } finally {
       setAnalyzing(false);
@@ -75,72 +179,90 @@ export default function ApplicationDetailPage() {
 
   const referToMeeting = async () => {
     handleAction('Referred', 'Referred to upcoming committee meeting.');
-    // Generate initial gist
-    const gistText = await generateMeetingGist({
-      projectName: application.projectName,
-      industrySector: application.industrySector,
-      category: application.category,
-      projectDescription: application.description
-    });
-    upsertGist({ applicationId: application.id, generatedText: gistText, editedText: gistText });
+    try {
+      const gistText = await generateMeetingGist({
+        projectName: application.projectName,
+        industrySector: application.industrySector,
+        category: application.category,
+        projectDescription: application.description
+      });
+      upsertGist({ applicationId: application.id, generatedText: gistText, editedText: gistText });
+    } catch {
+      toast({ variant: "destructive", title: "Gist Warning", description: "Application referred but gist generation failed." });
+    }
   };
 
   return (
-    <div className="space-y-8 max-w-6xl mx-auto">
-      <div className="flex justify-between items-start">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-bold text-primary">{application.projectName}</h1>
+    <div className="space-y-6 max-w-6xl mx-auto">
+      <AnimatedContainer animation="slide-up">
+      <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground">{application.projectName}</h1>
             <StatusBadge status={application.status} />
           </div>
-          <p className="text-muted-foreground">ID: {application.id} • Applied on {new Date(application.createdAt).toLocaleDateString()}</p>
+          <p className="text-sm text-muted-foreground">ID: {application.id} &bull; Applied on {new Date(application.createdAt).toLocaleDateString()}</p>
         </div>
         
-        <div className="flex gap-2">
-          {isProponent && application.status === 'Draft' && (
-            <Button onClick={() => handleAction('Submitted', 'Application submitted for scrutiny.')} className="font-bold">
-              <Send className="mr-2 h-4 w-4" /> Submit Application
-            </Button>
-          )}
-          {isProponent && application.paymentStatus === 'pending' && (
-            <Button onClick={handlePayment} variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">
-              <CheckCircle className="mr-2 h-4 w-4" /> Pay Application Fee
-            </Button>
-          )}
-          {isScrutiny && application.status === 'Submitted' && (
-            <Button onClick={() => handleAction('UnderScrutiny', 'Formally accepted for technical review.')}>
-              Accept for Scrutiny
-            </Button>
-          )}
-          {isScrutiny && application.status === 'UnderScrutiny' && (
-            <>
-              <Button variant="outline" onClick={() => handleAction('EDS', 'Information request sent to proponent.')}>Request EDS</Button>
-              <Button onClick={referToMeeting}>Refer to Meeting</Button>
-            </>
-          )}
-          {isMoM && application.status === 'Referred' && (
-             <Button asChild>
+        {!isFinalized && (
+          <div className="flex gap-2 flex-wrap">
+            {isProponent && application.status === 'Draft' && (
+              <Button onClick={() => handleAction('Submitted', 'Application submitted for scrutiny.')} className="font-bold">
+                <Send className="mr-2 h-4 w-4" /> Submit Application
+              </Button>
+            )}
+            {isProponent && application.status === 'EDS' && (
+              <Button onClick={() => handleAction('Submitted', 'Application resubmitted after EDS response.')} className="font-bold">
+                <RotateCcw className="mr-2 h-4 w-4" /> Resubmit Application
+              </Button>
+            )}
+            {isProponent && application.paymentStatus === 'pending' && (
+              <Button onClick={() => { setPaymentDialogOpen(true); setPaymentStep(0); }} variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">
+                <CreditCard className="mr-2 h-4 w-4" /> Pay Application Fee
+              </Button>
+            )}
+            {isScrutiny && application.status === 'Submitted' && (
+              <Button onClick={() => handleAction('UnderScrutiny', 'Formally accepted for technical review.')}>
+                Accept for Scrutiny
+              </Button>
+            )}
+            {isScrutiny && application.status === 'UnderScrutiny' && (
+              <>
+                <Button variant="outline" onClick={() => setEdsDialogOpen(true)}>
+                  <MessageSquare className="mr-2 h-4 w-4" /> Request EDS
+                </Button>
+                <Button onClick={referToMeeting}>Refer to Meeting</Button>
+              </>
+            )}
+            {isMoM && application.status === 'Referred' && (
+              <Button asChild>
                 <a href={`/dashboard/mom/editor/${application.id}`}>
                   <Edit3 className="mr-2 h-4 w-4" /> Edit MoM Gist
                 </a>
-             </Button>
-          )}
-        </div>
+              </Button>
+            )}
+          </div>
+        )}
       </div>
+      </AnimatedContainer>
 
+      <AnimatedContainer animation="fade-in" delay={100}>
       <ApplicationTimeline currentStatus={application.status} />
+      </AnimatedContainer>
 
+      <AnimatedContainer animation="slide-up" delay={200}>
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full max-w-md grid-cols-3">
-          <TabsTrigger value="details">Project Details</TabsTrigger>
-          <TabsTrigger value="documents">Documents ({appDocs.length})</TabsTrigger>
+        <TabsList className="grid w-full max-w-lg grid-cols-4 bg-muted/50">
+          <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="documents">Docs ({appDocs.length})</TabsTrigger>
+          <TabsTrigger value="comments">EDS ({appComments.length})</TabsTrigger>
           <TabsTrigger value="scrutiny" disabled={!isScrutiny && !isMoM}>AI Scrutiny</TabsTrigger>
         </TabsList>
         
         <TabsContent value="details" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Core Information</CardTitle>
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">Core Information</CardTitle>
             </CardHeader>
             <CardContent className="grid md:grid-cols-2 gap-8">
               <div className="space-y-4">
@@ -156,53 +278,94 @@ export default function ApplicationDetailPage() {
                   <h4 className="text-xs font-bold text-muted-foreground uppercase">Location</h4>
                   <p className="text-lg">{application.location || 'Not Specified'}</p>
                 </div>
+                <div>
+                  <h4 className="text-xs font-bold text-muted-foreground uppercase">Payment Status</h4>
+                  <span className={cn(
+                    "text-sm font-semibold px-3 py-1 rounded-full border",
+                    application.paymentStatus === 'paid' 
+                      ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30" 
+                      : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30"
+                  )}>
+                    {application.paymentStatus.toUpperCase()}
+                  </span>
+                </div>
               </div>
               <div>
                 <h4 className="text-xs font-bold text-muted-foreground uppercase">Project Description</h4>
-                <p className="mt-1 text-slate-700 leading-relaxed whitespace-pre-wrap">{application.description}</p>
+                <p className="mt-1 text-foreground/80 leading-relaxed whitespace-pre-wrap">{application.description}</p>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="documents" className="mt-6">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-3">
               <div>
-                <CardTitle>Uploaded Documents</CardTitle>
+                <CardTitle className="text-lg">Uploaded Documents</CardTitle>
                 <CardDescription>Legal and technical documents for compliance</CardDescription>
               </div>
-              {isProponent && (
-                <Button size="sm" variant="outline" onClick={() => {
-                  addDocument({ applicationId: application.id, name: 'Environmental Report', type: 'PDF', fileUrl: '#' });
-                  toast({ title: "Document Uploaded", description: "Simulated upload complete." });
-                }}>
+              {isProponent && !isFinalized && (
+                <Button size="sm" variant="outline" onClick={() => setUploadDialogOpen(true)}>
                   <Upload className="mr-2 h-4 w-4" /> Upload New
                 </Button>
               )}
             </CardHeader>
             <CardContent>
               {appDocs.length === 0 ? (
-                <div className="text-center py-12 text-muted-foreground bg-slate-50 rounded-lg border-2 border-dashed">
+                <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed">
                   <FileText className="mx-auto h-8 w-8 mb-2 opacity-30" />
                   <p>No documents uploaded yet.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {appDocs.map(doc => (
-                    <div key={doc.id} className="flex items-center justify-between p-4 border rounded-xl bg-white hover:border-primary transition-all group">
+                    <div key={doc.id} className="flex items-center justify-between p-4 border rounded-xl bg-card hover:border-primary/50 hover:shadow-sm transition-all duration-200 group">
                       <div className="flex items-center gap-3">
                         <div className="p-2 bg-primary/5 rounded-lg text-primary">
                           <FileText className="h-5 w-5" />
                         </div>
                         <div>
                           <p className="font-semibold text-sm">{doc.name}</p>
-                          <p className="text-xs text-muted-foreground">{doc.type} • Uploaded on {new Date(doc.uploadedAt).toLocaleDateString()}</p>
+                          <p className="text-xs text-muted-foreground">{doc.type} &bull; {new Date(doc.uploadedAt).toLocaleDateString()}</p>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Download className="h-4 w-4" />
-                      </Button>
+                      {doc.fileUrl && doc.fileUrl !== '#' && doc.fileUrl !== '#demo' && (
+                        <Button variant="ghost" size="icon" asChild className="opacity-0 group-hover:opacity-100 transition-opacity">
+                          <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" download>
+                            <Download className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="comments" className="mt-6">
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg">EDS Comments & Communication</CardTitle>
+              <CardDescription>Comments from the scrutiny team regarding missing documents or information</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {appComments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed">
+                  <MessageSquare className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                  <p>No EDS comments yet.</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {appComments.map(c => (
+                    <div key={c.id} className="p-4 border rounded-xl bg-card hover:shadow-sm transition-shadow">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="text-sm font-bold text-primary">{c.authorName}</span>
+                        <span className="text-xs text-muted-foreground">{new Date(c.createdAt).toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm text-foreground/80">{c.comment}</p>
                     </div>
                   ))}
                 </div>
@@ -212,13 +375,13 @@ export default function ApplicationDetailPage() {
         </TabsContent>
 
         <TabsContent value="scrutiny" className="mt-6">
-          <Card className="border-primary/20 bg-primary/5">
+          <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 shadow-sm">
             <CardHeader>
               <div className="flex items-center gap-2">
                 <Brain className="h-6 w-6 text-primary" />
                 <CardTitle>AI-Powered Scrutiny Assistant</CardTitle>
               </div>
-              <CardDescription>Analyze compliance and potential impacts using Gemini 1.5</CardDescription>
+              <CardDescription>Analyze compliance and potential impacts using Gemini AI</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {!analysisResult ? (
@@ -230,29 +393,29 @@ export default function ApplicationDetailPage() {
                 </div>
               ) : (
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
-                  <div className="p-4 bg-white rounded-xl border">
+                  <div className="p-4 bg-card rounded-xl border">
                     <h3 className="font-bold text-primary mb-2">Analysis Summary</h3>
-                    <p className="text-sm text-slate-700">{analysisResult.summary}</p>
+                    <p className="text-sm text-foreground/80">{analysisResult.summary}</p>
                   </div>
                   
                   <div className="grid md:grid-cols-2 gap-4">
-                    <div className="p-4 bg-white rounded-xl border border-rose-100">
-                      <h3 className="font-bold text-rose-700 mb-2 flex items-center gap-2">
+                    <div className="p-4 bg-card rounded-xl border border-rose-200 dark:border-rose-500/30">
+                      <h3 className="font-bold text-rose-700 dark:text-rose-400 mb-2 flex items-center gap-2">
                         <AlertTriangle className="h-4 w-4" /> Compliance Issues
                       </h3>
                       <ul className="list-disc pl-5 space-y-1">
                         {analysisResult.complianceIssues.map((issue: string, i: number) => (
-                          <li key={i} className="text-sm text-slate-700">{issue}</li>
+                          <li key={i} className="text-sm text-foreground/80">{issue}</li>
                         ))}
                       </ul>
                     </div>
-                    <div className="p-4 bg-white rounded-xl border border-indigo-100">
-                      <h3 className="font-bold text-indigo-700 mb-2 flex items-center gap-2">
+                    <div className="p-4 bg-card rounded-xl border border-indigo-200 dark:border-indigo-500/30">
+                      <h3 className="font-bold text-indigo-700 dark:text-indigo-400 mb-2 flex items-center gap-2">
                         <FileCheck className="h-4 w-4" /> Potential Impacts
                       </h3>
                       <ul className="list-disc pl-5 space-y-1">
                         {analysisResult.potentialImpacts.map((impact: string, i: number) => (
-                          <li key={i} className="text-sm text-slate-700">{impact}</li>
+                          <li key={i} className="text-sm text-foreground/80">{impact}</li>
                         ))}
                       </ul>
                     </div>
@@ -264,6 +427,133 @@ export default function ApplicationDetailPage() {
           </Card>
         </TabsContent>
       </Tabs>
+      </AnimatedContainer>
+
+      {/* Upload Document Dialog */}
+      <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Document</DialogTitle>
+            <DialogDescription>Select a document type and upload a file for this application.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Document Type</Label>
+              <Select value={uploadDocType} onValueChange={setUploadDocType}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {DOCUMENT_TYPES.map(t => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>File</Label>
+              <Input ref={fileInputRef} type="file" accept=".pdf,.doc,.docx,.txt,.jpg,.png" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleFileUpload} disabled={uploading}>
+              {uploading ? "Uploading..." : "Upload"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* EDS Comment Dialog */}
+      <Dialog open={edsDialogOpen} onOpenChange={setEdsDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Request Environmental Data Submission</DialogTitle>
+            <DialogDescription>Describe the missing documents or information the proponent needs to provide.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label>Comments on Missing Information</Label>
+            <Textarea
+              value={edsComment}
+              onChange={(e) => setEdsComment(e.target.value)}
+              placeholder="Please provide the following missing documents: ..."
+              className="min-h-[120px]"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEdsDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleRequestEDS} disabled={!edsComment.trim()}>
+              Send EDS Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* UPI Payment Simulation Dialog */}
+      <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Application Fee Payment</DialogTitle>
+            <DialogDescription>
+              {paymentStep === 0 && "Review payment details and proceed with UPI payment."}
+              {paymentStep === 1 && "Confirm your UPI payment."}
+              {paymentStep === 2 && "Payment completed successfully!"}
+            </DialogDescription>
+          </DialogHeader>
+          
+          {paymentStep === 0 && (
+            <div className="space-y-4">
+              <div className="p-4 bg-muted/50 rounded-lg border space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Application</span>
+                  <span className="text-sm font-medium">{application.projectName}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-sm text-muted-foreground">Category</span>
+                  <span className="text-sm font-medium">{application.category}</span>
+                </div>
+                <div className="flex justify-between border-t pt-2">
+                  <span className="text-sm font-bold">Application Fee</span>
+                  <span className="text-sm font-bold text-primary">₹15,000.00</span>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>Cancel</Button>
+                <Button onClick={() => setPaymentStep(1)}>
+                  <CreditCard className="mr-2 h-4 w-4" /> Pay via UPI
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+          
+          {paymentStep === 1 && (
+            <div className="space-y-4">
+              <div className="text-center p-6 bg-muted/50 rounded-lg border space-y-4">
+                <div className="mx-auto w-32 h-32 bg-white border-2 border-dashed rounded-lg flex items-center justify-center">
+                  <span className="text-xs text-muted-foreground text-center">UPI QR Code<br/>Placeholder</span>
+                </div>
+                <p className="text-sm font-medium">or enter UPI ID</p>
+                <Input placeholder="yourname@upi" className="max-w-xs mx-auto text-center" />
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setPaymentStep(0)}>Back</Button>
+                <Button onClick={handlePayment} className="bg-green-600 hover:bg-green-700">
+                  <CheckCircle className="mr-2 h-4 w-4" /> Confirm Payment
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+          
+          {paymentStep === 2 && (
+            <div className="text-center space-y-4 py-4">
+              <CheckCircle className="mx-auto h-16 w-16 text-green-600" />
+              <p className="text-lg font-bold text-green-700">Payment Successful</p>
+              <p className="text-sm text-muted-foreground">Transaction ID: TXN{Date.now().toString().slice(-8)}</p>
+              <Button onClick={() => setPaymentDialogOpen(false)}>Done</Button>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

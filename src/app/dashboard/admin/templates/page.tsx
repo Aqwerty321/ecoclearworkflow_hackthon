@@ -1,47 +1,193 @@
 
 "use client";
 
+import { useAppStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Settings, FileText, Layout } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Settings, Plus, Pencil, Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
+import { AnimatedContainer } from "@/components/ui/animated-container";
+import { GradientText } from "@/components/ui/gradient-text";
+import { ShimmerButton } from "@/components/ui/shimmer-button";
+
+const TEMPLATE_TYPES = ["EDS Letter", "EC Certificate", "NOC Template", "Compliance Report", "Other"];
 
 export default function SystemTemplatesPage() {
+  const { templates, currentUser, addTemplate, updateTemplate, deleteTemplate } = useAppStore();
+  const { toast } = useToast();
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [type, setType] = useState(TEMPLATE_TYPES[0]);
+  const [body, setBody] = useState("");
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+
+  if (currentUser?.role !== 'Admin') return <div className="p-8 text-center text-muted-foreground">Unauthorized</div>;
+
+  const openAdd = () => {
+    setEditingId(null);
+    setName("");
+    setType(TEMPLATE_TYPES[0]);
+    setBody("");
+    setDialogOpen(true);
+  };
+
+  const openEdit = (tpl: { id: string; name: string; type: string; body: string }) => {
+    setEditingId(tpl.id);
+    setName(tpl.name);
+    setType(tpl.type);
+    setBody(tpl.body);
+    setDialogOpen(true);
+  };
+
+  const handleSave = () => {
+    if (!name.trim() || !body.trim()) {
+      toast({ variant: "destructive", title: "Error", description: "Name and body are required." });
+      return;
+    }
+    if (editingId) {
+      updateTemplate(editingId, { name: name.trim(), type, body: body.trim() });
+      toast({ title: "Template Updated", description: `${name} has been updated.` });
+    } else {
+      addTemplate({ name: name.trim(), type, body: body.trim() });
+      toast({ title: "Template Created", description: `${name} has been added.` });
+    }
+    setDialogOpen(false);
+  };
+
+  const handleDelete = (id: string) => {
+    deleteTemplate(id);
+    setDeleteConfirm(null);
+    toast({ title: "Template Deleted", description: "Template has been removed." });
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-primary flex items-center gap-2">
-          <Settings className="h-8 w-8" />
-          System Templates
-        </h1>
-        <p className="text-muted-foreground">Manage document templates and AI prompt configurations</p>
-      </div>
+      <AnimatedContainer animation="fade-in">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold flex items-center gap-2">
+              <Settings className="h-8 w-8 text-primary" />
+              <GradientText>System Templates</GradientText>
+            </h1>
+            <p className="text-muted-foreground">Manage document templates and AI prompt configurations</p>
+          </div>
+          <ShimmerButton className="font-bold gap-2" onClick={openAdd}>
+            <Plus className="h-4 w-4" /> Create Template
+          </ShimmerButton>
+        </div>
+      </AnimatedContainer>
 
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
+      <AnimatedContainer animation="slide-up" delay={100}>
+        <Card className="shadow-sm border-border/50">
           <CardHeader>
-            <div className="flex items-center gap-2 mb-2">
-              <FileText className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">Document Templates</CardTitle>
-            </div>
-            <CardDescription>Manage structured layouts for EDS letters and EC certificates</CardDescription>
+            <CardTitle>Document Templates</CardTitle>
+            <CardDescription>Reusable templates for EDS letters, EC certificates, and compliance reports</CardDescription>
           </CardHeader>
-          <CardContent className="h-40 flex items-center justify-center border-t">
-            <p className="text-sm text-muted-foreground italic">Template editor interface is under maintenance</p>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow className="hover:bg-transparent">
+                  <TableHead>Template Name</TableHead>
+                  <TableHead>Type</TableHead>
+                  <TableHead>Preview</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {templates.map((tpl) => (
+                  <TableRow key={tpl.id} className="group hover:bg-muted/30 transition-colors">
+                    <TableCell className="font-bold">{tpl.name}</TableCell>
+                    <TableCell>
+                      <span className="text-xs px-2 py-0.5 rounded bg-muted/50 border border-border/50 font-medium">{tpl.type}</span>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground text-sm max-w-xs truncate">{tpl.body.slice(0, 80)}...</TableCell>
+                    <TableCell className="text-right space-x-2">
+                      <Button variant="ghost" size="sm" onClick={() => openEdit(tpl)} className="opacity-70 group-hover:opacity-100 transition-opacity">
+                        <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
+                      </Button>
+                      <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive opacity-70 group-hover:opacity-100 transition-opacity" onClick={() => setDeleteConfirm(tpl.id)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {templates.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={4} className="text-center text-muted-foreground py-8">No templates yet. Create one above.</TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
+      </AnimatedContainer>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2 mb-2">
-              <Layout className="h-5 w-5 text-primary" />
-              <CardTitle className="text-lg">UI Configurations</CardTitle>
+      {/* Add/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Edit Template" : "Create Template"}</DialogTitle>
+            <DialogDescription>
+              {editingId ? "Update the template content below." : "Define a reusable document template."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Template Name</Label>
+              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Standard EDS Letter" className="h-11" />
             </div>
-            <CardDescription>Customize dashboard layout and branding for different departments</CardDescription>
-          </CardHeader>
-          <CardContent className="h-40 flex items-center justify-center border-t">
-            <p className="text-sm text-muted-foreground italic">Branding settings coming soon</p>
-          </CardContent>
-        </Card>
-      </div>
+            <div className="space-y-2">
+              <Label>Template Type</Label>
+              <Select value={type} onValueChange={setType}>
+                <SelectTrigger className="h-11">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TEMPLATE_TYPES.map(t => (
+                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Template Body</Label>
+              <Textarea 
+                value={body} 
+                onChange={(e) => setBody(e.target.value)} 
+                placeholder="Dear {{proponent_name}},&#10;&#10;With reference to your application {{app_id}}..."
+                className="min-h-[200px] font-mono text-sm focus:ring-2 focus:ring-primary/20"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancel</Button>
+            <Button onClick={handleSave}>{editingId ? "Save Changes" : "Create Template"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation */}
+      <Dialog open={!!deleteConfirm} onOpenChange={() => setDeleteConfirm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Template</DialogTitle>
+            <DialogDescription>Are you sure? This template will be permanently removed.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+            <Button variant="destructive" onClick={() => deleteConfirm && handleDelete(deleteConfirm)}>Delete</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

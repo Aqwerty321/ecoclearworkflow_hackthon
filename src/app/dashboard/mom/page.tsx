@@ -8,120 +8,120 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
 import { Calendar, FileEdit, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
+import { AnimatedContainer } from "@/components/ui/animated-container";
+import { GradientText } from "@/components/ui/gradient-text";
+import { SpotlightCard } from "@/components/ui/spotlight-card";
+import { CountUp } from "@/components/ui/count-up";
+import { TableSkeleton } from "@/components/ui/page-skeleton";
 
 export default function MeetingDeskPage() {
-  const { applications, currentUser } = useAppStore();
+  const { applications, currentUser, hydrated } = useAppStore();
+
+  if (!hydrated) return <TableSkeleton />;
 
   if (currentUser?.role !== 'MoM Team' && currentUser?.role !== 'Admin') {
-    return <div className="p-8 text-center">Unauthorized Access</div>;
+    return <div className="p-8 text-center text-muted-foreground">Unauthorized Access</div>;
   }
 
   const meetingApps = applications.filter(app => 
     ['Referred', 'MoMGenerated', 'Finalized'].includes(app.status)
   );
 
+  const referredCount = applications.filter(a => a.status === 'Referred').length;
+  const momCount = applications.filter(a => a.status === 'MoMGenerated').length;
+  const finalizedCount = applications.filter(a => a.status === 'Finalized').length;
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-primary flex items-center gap-2">
-          <Calendar className="h-8 w-8" />
-          Meeting Desk
-        </h1>
-        <p className="text-muted-foreground">Manage committee meeting gists and draft Minutes of Meeting (MoM)</p>
-      </div>
+      <AnimatedContainer animation="fade-in">
+        <div>
+          <h1 className="text-3xl font-bold flex items-center gap-2">
+            <Calendar className="h-8 w-8 text-primary" />
+            <GradientText>Meeting Desk</GradientText>
+          </h1>
+          <p className="text-muted-foreground">Manage committee meeting gists and draft Minutes of Meeting (MoM)</p>
+        </div>
+      </AnimatedContainer>
 
       <div className="grid md:grid-cols-3 gap-4">
-        <Card className="bg-indigo-50 border-indigo-100">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-indigo-600">Referred to Meeting</p>
-                <p className="text-2xl font-bold text-indigo-900">
-                  {applications.filter(a => a.status === 'Referred').length}
-                </p>
-              </div>
-              <Calendar className="h-8 w-8 text-indigo-300" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-emerald-50 border-emerald-100">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-emerald-600">Drafts Generated</p>
-                <p className="text-2xl font-bold text-emerald-900">
-                  {applications.filter(a => a.status === 'MoMGenerated').length}
-                </p>
-              </div>
-              <FileEdit className="h-8 w-8 text-emerald-300" />
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="bg-slate-50 border-slate-200">
-          <CardContent className="pt-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-slate-600">Recently Finalized</p>
-                <p className="text-2xl font-bold text-slate-900">
-                  {applications.filter(a => a.status === 'Finalized').length}
-                </p>
-              </div>
-              <CheckCircle2 className="h-8 w-8 text-slate-300" />
-            </div>
-          </CardContent>
-        </Card>
+        {[
+          { label: "Referred to Meeting", count: referredCount, icon: Calendar, color: "border-l-indigo-500", iconColor: "text-indigo-400 dark:text-indigo-300" },
+          { label: "Drafts Generated", count: momCount, icon: FileEdit, color: "border-l-emerald-500", iconColor: "text-emerald-400 dark:text-emerald-300" },
+          { label: "Recently Finalized", count: finalizedCount, icon: CheckCircle2, color: "border-l-slate-500 dark:border-l-slate-400", iconColor: "text-muted-foreground/50" },
+        ].map((item, i) => {
+          const Icon = item.icon;
+          return (
+            <AnimatedContainer key={item.label} animation="slide-up" delay={i * 80}>
+              <SpotlightCard className={`border-l-4 ${item.color}`}>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-muted-foreground">{item.label}</p>
+                      <p className="text-2xl font-bold mt-1"><CountUp end={item.count} /></p>
+                    </div>
+                    <Icon className={`h-8 w-8 ${item.iconColor} animate-float`} />
+                  </div>
+                </CardContent>
+              </SpotlightCard>
+            </AnimatedContainer>
+          );
+        })}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Committee Queue</CardTitle>
-          <CardDescription>Applications discussed or scheduled for upcoming environmental committee meetings</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {meetingApps.length === 0 ? (
-            <div className="text-center py-20">
-              <Calendar className="mx-auto h-12 w-12 opacity-10 mb-4" />
-              <p className="text-muted-foreground font-medium">No applications are currently in the meeting queue.</p>
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Project Name</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Action</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {meetingApps.map((app) => (
-                  <TableRow key={app.id}>
-                    <TableCell className="font-medium">{app.projectName}</TableCell>
-                    <TableCell>{app.category}</TableCell>
-                    <TableCell><StatusBadge status={app.status} /></TableCell>
-                    <TableCell className="text-right">
-                      {app.status === 'Referred' || app.status === 'MoMGenerated' ? (
-                        <Button variant="default" size="sm" asChild>
-                          <Link href={`/dashboard/mom/editor/${app.id}`}>
-                            <FileEdit className="h-4 w-4 mr-2" />
-                            Process MoM
-                          </Link>
-                        </Button>
-                      ) : (
-                        <Button variant="outline" size="sm" asChild>
-                          <Link href={`/dashboard/applications/${app.id}`}>
-                            View Record
-                          </Link>
-                        </Button>
-                      )}
-                    </TableCell>
+      <AnimatedContainer animation="slide-up" delay={300}>
+        <Card className="shadow-sm border-border/50">
+          <CardHeader>
+            <CardTitle>Committee Queue</CardTitle>
+            <CardDescription>Applications discussed or scheduled for upcoming environmental committee meetings</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {meetingApps.length === 0 ? (
+              <div className="text-center py-20 bg-muted/30 rounded-lg border-2 border-dashed border-border/50">
+                <div className="w-16 h-16 mx-auto rounded-full bg-muted/50 flex items-center justify-center mb-4">
+                  <Calendar className="h-8 w-8 text-muted-foreground/40" />
+                </div>
+                <p className="text-muted-foreground font-medium">No applications are currently in the meeting queue.</p>
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Project Name</TableHead>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {meetingApps.map((app) => (
+                    <TableRow key={app.id} className="group hover:bg-muted/30 transition-colors">
+                      <TableCell className="font-medium">{app.projectName}</TableCell>
+                      <TableCell>{app.category}</TableCell>
+                      <TableCell><StatusBadge status={app.status} /></TableCell>
+                      <TableCell className="text-right">
+                        {app.status === 'Referred' || app.status === 'MoMGenerated' ? (
+                          <Button variant="default" size="sm" asChild className="opacity-70 group-hover:opacity-100 transition-opacity">
+                            <Link href={`/dashboard/mom/editor/${app.id}`}>
+                              <FileEdit className="h-4 w-4 mr-2" />
+                              Process MoM
+                            </Link>
+                          </Button>
+                        ) : (
+                          <Button variant="outline" size="sm" asChild className="opacity-70 group-hover:opacity-100 transition-opacity">
+                            <Link href={`/dashboard/applications/${app.id}`}>
+                              View Record
+                            </Link>
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </AnimatedContainer>
     </div>
   );
 }
