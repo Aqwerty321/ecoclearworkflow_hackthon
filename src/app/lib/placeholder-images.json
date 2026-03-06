@@ -1,0 +1,17 @@
+
+{
+  "placeholderImages": [
+    {
+      "id": "hero-environment",
+      "description": "Clean environment with lush green forests",
+      "imageUrl": "https://picsum.photos/seed/env1/1200/600",
+      "imageHint": "environment forest"
+    },
+    {
+      "id": "profile-placeholder",
+      "description": "Professional user avatar",
+      "imageUrl": "https://picsum.photos/seed/user1/200/200",
+      "imageHint": "professional person"
+    }
+  ]
+}
