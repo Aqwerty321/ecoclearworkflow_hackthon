@@ -187,9 +187,28 @@ export default function ApplicationDetailPage() {
     }
     setAnalyzing(true);
     try {
+      // Use real Firebase Storage URLs if available; otherwise synthesize a descriptive text payload
+      const realUrls = appDocs
+        .filter(d => d.fileUrl && !d.fileUrl.startsWith('#'))
+        .map(d => d.fileUrl);
+
+      const documentUrls = realUrls.length > 0
+        ? realUrls
+        : [
+            `data:text/plain;base64,${btoa(
+              `Project: ${application.projectName}\n` +
+              `Sector: ${application.industrySector}\n` +
+              `Category: ${application.category}\n` +
+              `Location: ${application.location || 'Not specified'}\n` +
+              `Description: ${application.description}\n\n` +
+              `Submitted Documents (${appDocs.length}):\n` +
+              appDocs.map((d, i) => `${i + 1}. ${d.name} (${d.type})`).join('\n')
+            )}`
+          ];
+
       const res = await scrutinyDocumentSummaryAndFlagging({
         projectDescription: application.description,
-        documentUrls: ["data:text/plain;base64,U2FtcGxlIERvY3VtZW50"]
+        documentUrls,
       });
       setAnalysisResult(res);
     } catch {

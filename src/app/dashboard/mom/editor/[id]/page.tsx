@@ -43,7 +43,7 @@ export default function MoMEditorPage() {
   const [momHash, setMomHash] = useState<string>("");
   const [signed, setSigned] = useState(false);
 
-  const isFinalized = application?.status === 'Finalized' || application?.status === 'MoMGenerated' && existingMinutes;
+  const isFinalized = application?.status === 'Finalized' || (application?.status === 'MoMGenerated' && !!existingMinutes);
   const isLocked = application?.status === 'Finalized';
 
   useEffect(() => {

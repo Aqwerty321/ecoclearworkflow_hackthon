@@ -147,7 +147,7 @@ export function UPIPayment({
           <Button variant="outline" onClick={onCancel}>
             Cancel
           </Button>
-          <Button onClick={() => setStep("pay")} className="bg-primary">
+          <Button onClick={() => { setStep("pay"); setCountdown(300); }} className="bg-primary">
             <QrCode className="mr-2 h-4 w-4" /> Proceed to Pay
           </Button>
         </div>

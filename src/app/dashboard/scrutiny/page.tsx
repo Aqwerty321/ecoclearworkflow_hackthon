@@ -85,7 +85,7 @@ export default function ScrutinyPoolPage() {
           { label: "EDS Issued", count: edsCount, color: "border-l-purple-500" },
         ].map((item, i) => (
           <AnimatedContainer key={item.label} animation="slide-up" delay={i * 80}>
-            <SpotlightCard className="border-l-4 p-4" style={{ borderLeftColor: undefined }} >
+            <SpotlightCard className="border-l-4 p-4">
               <div className={`border-l-4 ${item.color} -ml-4 pl-4`}>
                 <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{item.label}</p>
                 <p className="text-2xl font-bold mt-1"><CountUp end={item.count} /></p>

@@ -160,7 +160,7 @@ export function ESignDocument({
             </div>
             <div className="flex items-center gap-1 text-xs text-muted-foreground ml-auto">
               <Clock className="h-3 w-3" />
-              Certificate valid until {new Date(signature.validTo).toLocaleTimeString()}
+              Certificate valid until {new Date(signature.validTo).toLocaleString()}
             </div>
           </div>
         </CardContent>

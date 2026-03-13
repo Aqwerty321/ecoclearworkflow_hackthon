@@ -65,7 +65,7 @@ Ensure your output strictly adheres to the JSON schema provided.`,
     ];
 
     const { output } = await ai.generate({
-      model: ai.model('gemini-1.5-flash'), // Using a multimodal model that can handle text and document content.
+      model: 'googleai/gemini-1.5-flash', // Using a multimodal model that can handle text and document content.
       prompt: promptParts,
       output: {
         schema: ScrutinyDocumentSummaryAndFlaggingOutputSchema,

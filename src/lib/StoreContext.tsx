@@ -202,6 +202,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
     );
 
+    // Listen to minutes of meeting
+    unsubscribers.push(
+      onSnapshot(collection(db!, MINUTES), (snap) => {
+        const minutesList = snap.docs.map(d => ({ id: d.id, ...d.data() } as MinutesOfMeeting));
+        setData(prev => ({ ...prev, minutes: minutesList }));
+      })
+    );
+
+    // Listen to payments
+    unsubscribers.push(
+      onSnapshot(collection(db!, PAYMENTS), (snap) => {
+        const paymentsList = snap.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
+        setData(prev => ({ ...prev, payments: paymentsList }));
+      })
+    );
+
     // Auth state listener
     unsubscribers.push(
       onAuthStateChanged(auth!, async (firebaseUser) => {
@@ -219,14 +235,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     );
 
     return () => unsubscribers.forEach(u => u());
-  }, [useFirebase, loadLocal]);
-
-  // ---- When not using Firebase, hydrate from localStorage ----
-  useEffect(() => {
-    if (!useFirebase) {
-      loadLocal();
-      setHydrated(true);
-    }
   }, [useFirebase, loadLocal]);
 
   // ---- Actions ----

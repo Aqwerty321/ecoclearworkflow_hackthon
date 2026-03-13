@@ -17,7 +17,11 @@ import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 
-const TEMPLATE_TYPES = ["EDS Letter", "EC Certificate", "NOC Template", "Compliance Report", "Other"];
+const TEMPLATE_TYPES: Array<'document' | 'gist'> = ["document", "gist"];
+const TEMPLATE_TYPE_LABELS: Record<'document' | 'gist', string> = {
+  document: "Document Template",
+  gist: "AI Gist Prompt",
+};
 
 export default function SystemTemplatesPage() {
   const { templates, currentUser, addTemplate, updateTemplate, deleteTemplate } = useAppStore();
@@ -25,40 +29,40 @@ export default function SystemTemplatesPage() {
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [type, setType] = useState(TEMPLATE_TYPES[0]);
-  const [body, setBody] = useState("");
+  const [templateName, setTemplateName] = useState("");
+  const [type, setType] = useState<'document' | 'gist'>(TEMPLATE_TYPES[0]);
+  const [content, setContent] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   if (currentUser?.role !== 'Admin') return <div className="p-8 text-center text-muted-foreground">Unauthorized</div>;
 
   const openAdd = () => {
     setEditingId(null);
-    setName("");
+    setTemplateName("");
     setType(TEMPLATE_TYPES[0]);
-    setBody("");
+    setContent("");
     setDialogOpen(true);
   };
 
-  const openEdit = (tpl: { id: string; name: string; type: string; body: string }) => {
+  const openEdit = (tpl: { id: string; templateName: string; type: 'document' | 'gist'; content: string }) => {
     setEditingId(tpl.id);
-    setName(tpl.name);
+    setTemplateName(tpl.templateName);
     setType(tpl.type);
-    setBody(tpl.body);
+    setContent(tpl.content);
     setDialogOpen(true);
   };
 
   const handleSave = () => {
-    if (!name.trim() || !body.trim()) {
-      toast({ variant: "destructive", title: "Error", description: "Name and body are required." });
+    if (!templateName.trim() || !content.trim()) {
+      toast({ variant: "destructive", title: "Error", description: "Name and content are required." });
       return;
     }
     if (editingId) {
-      updateTemplate(editingId, { name: name.trim(), type, body: body.trim() });
-      toast({ title: "Template Updated", description: `${name} has been updated.` });
+      updateTemplate(editingId, { templateName: templateName.trim(), type, content: content.trim() });
+      toast({ title: "Template Updated", description: `${templateName} has been updated.` });
     } else {
-      addTemplate({ name: name.trim(), type, body: body.trim() });
-      toast({ title: "Template Created", description: `${name} has been added.` });
+      addTemplate({ templateName: templateName.trim(), type, content: content.trim() });
+      toast({ title: "Template Created", description: `${templateName} has been added.` });
     }
     setDialogOpen(false);
   };
@@ -105,11 +109,13 @@ export default function SystemTemplatesPage() {
               <TableBody>
                 {templates.map((tpl) => (
                   <TableRow key={tpl.id} className="group hover:bg-muted/30 transition-colors">
-                    <TableCell className="font-bold">{tpl.name}</TableCell>
+                    <TableCell className="font-bold">{tpl.templateName}</TableCell>
                     <TableCell>
-                      <span className="text-xs px-2 py-0.5 rounded bg-muted/50 border border-border/50 font-medium">{tpl.type}</span>
+                      <span className="text-xs px-2 py-0.5 rounded bg-muted/50 border border-border/50 font-medium">
+                        {TEMPLATE_TYPE_LABELS[tpl.type]}
+                      </span>
                     </TableCell>
-                    <TableCell className="text-muted-foreground text-sm max-w-xs truncate">{tpl.body.slice(0, 80)}...</TableCell>
+                    <TableCell className="text-muted-foreground text-sm max-w-xs truncate">{tpl.content.slice(0, 80)}...</TableCell>
                     <TableCell className="text-right space-x-2">
                       <Button variant="ghost" size="sm" onClick={() => openEdit(tpl)} className="opacity-70 group-hover:opacity-100 transition-opacity">
                         <Pencil className="h-3.5 w-3.5 mr-1" /> Edit
@@ -143,26 +149,26 @@ export default function SystemTemplatesPage() {
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Template Name</Label>
-              <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Standard EDS Letter" className="h-11" />
+              <Input value={templateName} onChange={(e) => setTemplateName(e.target.value)} placeholder="e.g. Standard EDS Letter" className="h-11" />
             </div>
             <div className="space-y-2">
               <Label>Template Type</Label>
-              <Select value={type} onValueChange={setType}>
+              <Select value={type} onValueChange={(v) => setType(v as 'document' | 'gist')}>
                 <SelectTrigger className="h-11">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   {TEMPLATE_TYPES.map(t => (
-                    <SelectItem key={t} value={t}>{t}</SelectItem>
+                    <SelectItem key={t} value={t}>{TEMPLATE_TYPE_LABELS[t]}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Template Body</Label>
-              <Textarea 
-                value={body} 
-                onChange={(e) => setBody(e.target.value)} 
+              <Label>Template Content</Label>
+              <Textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
                 placeholder="Dear {{proponent_name}},&#10;&#10;With reference to your application {{app_id}}..."
                 className="min-h-[200px] font-mono text-sm focus:ring-2 focus:ring-primary/20"
               />
