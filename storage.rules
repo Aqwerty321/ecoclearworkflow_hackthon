@@ -1,0 +1,24 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Documents uploaded per application
+    match /documents/{applicationId}/{allPaths=**} {
+      // Any authenticated user can read
+      allow read: if request.auth != null;
+
+      // Authenticated users can upload
+      allow create: if request.auth != null
+        && request.resource.size < 20 * 1024 * 1024  // 20 MB max
+        && request.resource.contentType.matches('application/pdf|image/.*');
+
+      // Only uploader or admin can delete — we store uid in metadata
+      allow delete: if request.auth != null && (
+        request.auth.uid == resource.metadata['uploadedBy']
+        || firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'Admin'
+      );
+
+      allow update: if false; // no in-place overwrites; re-upload instead
+    }
+  }
+}
