@@ -48,12 +48,17 @@ function buildUPIIntentURI(params: {
   return `upi://pay?${query.toString()}`;
 }
 
+// UPI VPA from environment — allows operators to override without a code change.
+// Defaults to the CECB collection VPA used during hackathon demo.
+const DEFAULT_VPA =
+  process.env.NEXT_PUBLIC_CECB_UPI_VPA || "cecb.collection@sbi";
+
 export function UPIPayment({
   applicationId,
   projectName,
   category,
   amount,
-  payeeVPA = "cecb.collection@sbi",
+  payeeVPA = DEFAULT_VPA,
   payeeName = "Chhattisgarh Environment Conservation Board",
   onPaymentComplete,
   onCancel,

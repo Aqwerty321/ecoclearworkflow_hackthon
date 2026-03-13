@@ -9,9 +9,14 @@
  * - UIDAI (Aadhaar e-KYC): https://uidai.gov.in
  * - Protean eGov (eSign): https://www.protean-tinpan.com
  *
- * For the hackathon, we provide realistic mock implementations that
- * demonstrate the integration architecture and data flow.
+ * Mock mode is enabled when NEXT_PUBLIC_INDIA_STACK_MOCK=true (default for hackathon).
+ * Set NEXT_PUBLIC_INDIA_STACK_MOCK=false to disable mock and require real API keys.
  */
+
+const INDIA_STACK_MOCK =
+  typeof process !== 'undefined'
+    ? process.env.NEXT_PUBLIC_INDIA_STACK_MOCK !== 'false'
+    : true; // Default: mock enabled
 
 // ─────────────────────── Aadhaar e-KYC ───────────────────────────────
 
@@ -55,6 +60,7 @@ export type EKYCStatus = 'pending' | 'otp_sent' | 'verified' | 'failed';
 /**
  * Initiate Aadhaar OTP for e-KYC verification.
  * In production: Calls UIDAI OTP API via ASA (Authentication Service Agency).
+ * Controlled by NEXT_PUBLIC_INDIA_STACK_MOCK env var.
  */
 export async function initiateAadhaarOTP(
   aadhaarNumber: string
@@ -65,6 +71,15 @@ export async function initiateAadhaarOTP(
       success: false,
       transactionId: '',
       message: 'Invalid Aadhaar number format. Must be 12 digits.',
+    };
+  }
+
+  if (!INDIA_STACK_MOCK) {
+    // Production path — not implemented in hackathon build
+    return {
+      success: false,
+      transactionId: '',
+      message: 'Live UIDAI integration not configured. Set NEXT_PUBLIC_INDIA_STACK_MOCK=true for demo mode.',
     };
   }
 
@@ -180,12 +195,21 @@ export type ESignStatus = 'pending' | 'otp_sent' | 'signed' | 'failed' | 'expire
 /**
  * Initiate eSign OTP for document signing.
  * In production: Calls Protean/NSDL eSign API to trigger Aadhaar OTP.
+ * Controlled by NEXT_PUBLIC_INDIA_STACK_MOCK env var.
  */
 export async function initiateESignOTP(
   signerName: string,
   documentHash: string
 ): Promise<{ success: boolean; transactionId: string; message: string }> {
   const transactionId = `ESIGN-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+
+  if (!INDIA_STACK_MOCK) {
+    return {
+      success: false,
+      transactionId: '',
+      message: 'Live eSign integration not configured. Set NEXT_PUBLIC_INDIA_STACK_MOCK=true for demo mode.',
+    };
+  }
 
   // Simulate API latency
   await new Promise(resolve => setTimeout(resolve, 600));
