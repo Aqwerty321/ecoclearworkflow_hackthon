@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState, useCallback, Rea
 import type { User, UserRole, Application, ApplicationStatus, Document, Sector, EDSComment, MeetingGist, Template, MinutesOfMeeting, Payment } from './types';
 import { isValidTransition } from './types';
 import { auth, db, firebaseConfigured } from './firebase';
-import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
 import {
   collection, doc, addDoc, updateDoc, deleteDoc, getDocs, getDoc, onSnapshot, query, where, setDoc, serverTimestamp, Timestamp
 } from 'firebase/firestore';
@@ -55,7 +55,8 @@ interface StoreActions {
   firebaseConnected: boolean;
   login: (email: string, password: string) => Promise<User | null>;
   logout: () => Promise<void>;
-  register: (name: string, email: string, password: string) => Promise<User | null>;
+  register: (name: string, email: string, password: string) => Promise<{ user: User | null; error?: string }>;
+  forgotPassword: (email: string) => Promise<{ success: boolean; error?: string }>;
   addApplication: (app: Omit<Application, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'paymentStatus'>) => Promise<Application>;
   updateApplicationStatus: (id: string, status: ApplicationStatus) => void;
   updatePaymentStatus: (id: string, status: 'paid' | 'pending') => void;
@@ -275,7 +276,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveLocal({ ...data, currentUser: null });
   }, [useFirebase, data, saveLocal]);
 
-  const register = useCallback(async (name: string, email: string, password: string): Promise<User | null> => {
+  const register = useCallback(async (name: string, email: string, password: string): Promise<{ user: User | null; error?: string }> => {
     if (useFirebase) {
       try {
         const cred = await createUserWithEmailAndPassword(auth!, email, password);
@@ -293,11 +294,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           createdAt: newUser.createdAt,
         });
         setData(prev => ({ ...prev, currentUser: newUser }));
-        return newUser;
-      } catch {
-        return null;
+        return { user: newUser };
+      } catch (err: unknown) {
+        const code = (err as { code?: string })?.code ?? '';
+        let message = 'Registration failed. Please try again.';
+        if (code === 'auth/email-already-in-use') message = 'This email is already registered. Try signing in or use Forgot Password.';
+        else if (code === 'auth/invalid-email') message = 'Invalid email address format.';
+        else if (code === 'auth/weak-password') message = 'Password is too weak. Use at least 6 characters.';
+        else if (code === 'auth/operation-not-allowed') message = 'Email/password sign-up is not enabled. Contact your administrator.';
+        else if (code === 'auth/network-request-failed') message = 'Network error. Please check your connection.';
+        return { user: null, error: message };
       }
     } else {
+      const existing = data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (existing) return { user: null, error: 'This email is already registered. Try signing in.' };
       const newUser: User = {
         id: Math.random().toString(36).substr(2, 9),
         name,
@@ -306,9 +316,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       };
       saveLocal({ ...data, users: [...data.users, newUser], currentUser: newUser });
-      return newUser;
+      return { user: newUser };
     }
   }, [useFirebase, data, saveLocal]);
+
+  const forgotPassword = useCallback(async (email: string): Promise<{ success: boolean; error?: string }> => {
+    if (useFirebase) {
+      try {
+        await sendPasswordResetEmail(auth!, email);
+        return { success: true };
+      } catch (err: unknown) {
+        const code = (err as { code?: string })?.code ?? '';
+        let message = 'Failed to send reset email. Please try again.';
+        if (code === 'auth/user-not-found') message = 'No account found with that email address.';
+        else if (code === 'auth/invalid-email') message = 'Invalid email address format.';
+        else if (code === 'auth/too-many-requests') message = 'Too many requests. Please wait before trying again.';
+        return { success: false, error: message };
+      }
+    } else {
+      // Demo mode — simulate success
+      const found = data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+      if (!found) return { success: false, error: 'No account found with that email address.' };
+      return { success: true };
+    }
+  }, [useFirebase, data]);
 
   const addApplication = useCallback(async (app: Omit<Application, 'id' | 'createdAt' | 'updatedAt' | 'status' | 'paymentStatus'>): Promise<Application> => {
     const now = new Date().toISOString();
@@ -527,6 +558,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     saveMinutes,
     addUser,
     updateApplication,
+    forgotPassword,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

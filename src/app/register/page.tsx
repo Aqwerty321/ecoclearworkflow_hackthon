@@ -42,11 +42,11 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
-    const user = await register(name, email, password);
-    if (user) {
+    const result = await register(name, email, password);
+    if (result.user) {
       router.push("/dashboard");
     } else {
-      setError("Registration failed. Email may already be in use.");
+      setError(result.error ?? "Registration failed. Please try again.");
     }
     setLoading(false);
   };
