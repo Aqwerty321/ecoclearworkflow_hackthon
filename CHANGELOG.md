@@ -99,11 +99,84 @@ Enterprise-grade upgrade implementing the CECB Environmental Clearance workflow 
 
 **Files:** `src/app/api/health/route.ts`, `src/app/api/gis/proximity/route.ts`, `src/app/api/documents/verify/route.ts`, `src/app/api/applications/route.ts`
 
+#### 2.2 Python AI Agent Service (FastAPI + LangGraph)
+- **LangGraph Multi-Agent Supervisor Architecture** with 5 specialized nodes:
+  - **Ingestion Node** — Parses and structures incoming application data
+  - **Regulatory Analyzer Node** — LLM-powered cross-referencing against CECB sector rules (Google Gemini)
+  - **Validation & Draft Node** — Structures compliance findings, determines EDS necessity
+  - **Reflector/Critic Node** — Quality assurance review of analysis outputs
+  - **EDS Generation Node** — Formal EDS letter drafting with CECB formatting
+- Conditional routing: Reflector routes to EDS generation only when deficiencies warrant it
+- CECB regulatory knowledge base mirroring Next.js Genkit rules (Mining, Energy, Infrastructure, Manufacturing)
+- Required document lists per category (A, B1, B2)
+- Indian environmental legislation references (EIA 2006, Air Act 1981, Water Act 1974, etc.)
+- 3 FastAPI endpoints:
+  - `POST /api/scrutiny/analyze` — Full multi-agent scrutiny pipeline
+  - `POST /api/eds/generate` — Standalone EDS letter generation
+  - `POST /api/compliance/check` — Quick rule-based compliance check
+- Health check with agent availability status
+- CORS configured for Next.js frontend
+- LangSmith observability integration (optional)
+- Dockerfile with Python 3.12-slim, health checks, non-root user
+
+**Files:** `services/ai-agent-service/app/main.py`, `app/agents/supervisor.py`, `app/agents/nodes.py`, `app/agents/regulations.py`, `app/models/schemas.py`, `Dockerfile`
+
+#### 2.3 Python GIS Service (FastAPI + Shapely/GeoPandas)
+- **Shapely 2.x spatial engine** with proper UTM projection (EPSG:32644) for accurate distance/area calculations
+- 8 Chhattisgarh eco-zones as Shapely Polygon geometries (circular approximations from center + radius)
+- PyProj WGS84 ↔ UTM Zone 44N projection for meter-accurate buffer/area computations
+- Haversine distance for point-to-point proximity
+- 3 FastAPI endpoints:
+  - `POST /api/gis/proximity` — Proximity analysis against all eco-zones with risk classification
+  - `POST /api/gis/buffer` — ST_Buffer equivalent: compute buffer polygon + GeoJSON + area + zone intersections
+  - `POST /api/gis/intersection` — ST_Intersects equivalent: check GeoJSON geometry against zone polygons with overlap area
+- Category-specific buffer requirements (A=10km, B1=5km, B2=2km)
+- Risk-based recommendations for each analysis type
+- Dockerfile with GDAL/GEOS/PROJ system dependencies, non-root user
+
+**Files:** `services/gis-service/app/main.py`, `app/data/eco_zones.py`, `app/models/schemas.py`, `Dockerfile`
+
+#### 2.4 Docker Compose Orchestration
+- Multi-service orchestration: Next.js frontend + AI Agent (port 8001) + GIS Service (port 8002)
+- Service health checks with dependencies (frontend waits for both Python services)
+- Shared Docker network (`ecoclear-net`) for inter-service communication
+- PostgreSQL + PostGIS container pre-configured (commented out, ready for future migration)
+- Environment file support (`.env` per service)
+
+**Files:** `docker-compose.yml`
+
+#### 2.5 Frontend API Client
+- TypeScript API client utility (`src/lib/api-client.ts`) for Python microservice communication
+- Type-safe request/response interfaces matching Python Pydantic schemas
+- Service health check functions
+- Timeout handling with AbortController
+- Server-side direct calls vs. browser proxy pattern for CORS
+
+**Files:** `src/lib/api-client.ts`
+
 ### Dependencies Added
+
+**Node.js (Next.js frontend):**
 - `qrcode.react` — QR code SVG generation
 - `@tiptap/react`, `@tiptap/starter-kit`, `@tiptap/extension-underline`, `@tiptap/extension-highlight`, `@tiptap/extension-collaboration`, `@tiptap/extension-collaboration-cursor` — Rich text editor
 - `yjs`, `y-webrtc`, `y-indexeddb` — CRDT sync + offline persistence
 - `leaflet`, `react-leaflet`, `@types/leaflet` — Map rendering
+
+**Python (AI Agent Service):**
+- `fastapi`, `uvicorn` — ASGI web framework
+- `langgraph` — Multi-agent graph orchestration
+- `langchain`, `langchain-google-genai`, `langchain-community` — LLM integration
+- `langsmith` — LLM observability
+- `pydantic` — Data validation
+- `httpx` — Async HTTP client
+
+**Python (GIS Service):**
+- `fastapi`, `uvicorn` — ASGI web framework
+- `shapely` — Computational geometry (ST_Buffer, ST_Intersects equivalents)
+- `geopandas` — Geospatial data processing
+- `pyproj` — Coordinate reference system projections
+- `geojson` — GeoJSON parsing/serialization
+- `pydantic` — Data validation
 
 ### Architecture Notes
 - All new features maintain backwards compatibility with the existing demo mode (localStorage)
@@ -113,3 +186,8 @@ Enterprise-grade upgrade implementing the CECB Environmental Clearance workflow 
 - UPI payment uses standardized NPCI intent URI format
 - Collaborative editor uses WebRTC for peer discovery (no central server needed)
 - API routes provide server-side validation layer parallel to client-side logic
+- Python services are independent and can run standalone or via Docker Compose
+- AI Agent Service uses LangGraph StateGraph with compiled graph singletons for performance
+- GIS Service uses UTM Zone 44N (EPSG:32644) projection for Chhattisgarh-accurate spatial calculations
+- Inter-service communication uses Docker network DNS names (e.g., `http://gis-service:8002`)
+- Frontend API client supports both server-side direct calls and browser-side proxy pattern

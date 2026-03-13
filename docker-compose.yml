@@ -1,0 +1,96 @@
+# EcoClear Workflow — Multi-Service Docker Compose
+# Orchestrates: Next.js frontend + AI Agent Service + GIS Service + PostgreSQL/PostGIS
+
+version: "3.9"
+
+services:
+  # ─────────── Next.js Frontend ───────────────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "9002:9002"
+    environment:
+      - NODE_ENV=production
+      - AI_AGENT_SERVICE_URL=http://ai-agent:8001
+      - GIS_SERVICE_URL=http://gis-service:8002
+    depends_on:
+      ai-agent:
+        condition: service_healthy
+      gis-service:
+        condition: service_healthy
+    networks:
+      - ecoclear-net
+
+  # ─────────── AI Agent Service (LangGraph + Gemini) ──────────────────
+  ai-agent:
+    build:
+      context: ./services/ai-agent-service
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    env_file:
+      - ./services/ai-agent-service/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8001
+      - LOG_LEVEL=info
+      - GIS_SERVICE_URL=http://gis-service:8002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ecoclear-net
+
+  # ─────────── GIS Service (Shapely + GeoPandas) ─────────────────────
+  gis-service:
+    build:
+      context: ./services/gis-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    env_file:
+      - ./services/gis-service/.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8002
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - ecoclear-net
+
+  # ─────────── PostgreSQL + PostGIS (future — spatial database) ──────
+  # Uncomment when migrating from in-memory Shapely to PostGIS
+  # postgres:
+  #   image: postgis/postgis:16-3.4
+  #   ports:
+  #     - "5432:5432"
+  #   environment:
+  #     POSTGRES_DB: ecoclear_gis
+  #     POSTGRES_USER: ecoclear
+  #     POSTGRES_PASSWORD: ecoclear_dev
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql/data
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U ecoclear -d ecoclear_gis"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #   networks:
+  #     - ecoclear-net
+
+networks:
+  ecoclear-net:
+    driver: bridge
+
+# volumes:
+#   pgdata:
