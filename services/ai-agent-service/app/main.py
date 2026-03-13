@@ -144,6 +144,8 @@ async def analyze_scrutiny(request: ScrutinyRequest):
             recommendations=result.get("recommendations", []),
             requires_eds=result.get("requires_eds", False),
             agent_trace=result.get("agent_trace", []),
+            reflector_quality_score=result.get("reflector_quality_score"),
+            reflector_adjustments=result.get("reflector_adjustments", []),
         )
 
     except Exception as e:
@@ -226,6 +228,17 @@ async def check_compliance(request: ComplianceCheckRequest):
         # Identify missing parameters
         missing = [c["parameter"] for c in checks if c["status"] == "missing"]
 
+        from app.agents.regulations import REGULATION_REFERENCES
+
+        # Build dynamic applicable regulations from base refs + sector-specific entry
+        applicable_regs = [
+            f"{key} — {val}" for key, val in REGULATION_REFERENCES.items()
+        ]
+        # Ensure the sector-specific CECB guideline is always included
+        sector_guideline = f"CECB {sector} Sector Guidelines"
+        if not any(sector in r for r in applicable_regs):
+            applicable_regs.append(sector_guideline)
+
         return ComplianceCheckResponse(
             sector=sector,
             category=category,
@@ -233,11 +246,7 @@ async def check_compliance(request: ComplianceCheckRequest):
             risk_level=risk,
             checks=checks,
             missing_parameters=missing,
-            applicable_regulations=[
-                "EIA Notification 2006",
-                "Environment Protection Act 1986",
-                f"CECB {sector} Sector Guidelines",
-            ],
+            applicable_regulations=applicable_regs,
         )
 
     except Exception as e:

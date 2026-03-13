@@ -53,6 +53,8 @@ class ScrutinyResponse(BaseModel):
     recommendations: list[str] = Field(default_factory=list)
     requires_eds: bool = Field(False, description="Whether EDS should be issued")
     agent_trace: list[str] = Field(default_factory=list, description="Agent execution trace for audit")
+    reflector_quality_score: Optional[int] = Field(None, description="QA quality score from reflector node")
+    reflector_adjustments: list[str] = Field(default_factory=list, description="Suggested adjustments from reflector/critic node")
 
 
 # ---- EDS Draft Generation ----

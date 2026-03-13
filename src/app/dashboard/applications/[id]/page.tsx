@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
 import { scrutinyDocumentSummaryAndFlagging } from "@/ai/flows/scrutiny-document-summary-and-flagging";
 import { generateMeetingGist } from "@/ai/flows/generate-meeting-gist";
+import { analyzeSatellite, type SatelliteAnalysisResponse } from "@/lib/api-client";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,7 @@ export default function ApplicationDetailPage() {
     currentUser, 
     updateApplicationStatus, 
     updatePaymentStatus,
+    updateApplication,
     addDocument,
     addComment,
     upsertGist,
@@ -70,6 +72,8 @@ export default function ApplicationDetailPage() {
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [satelliteResult, setSatelliteResult] = useState<SatelliteAnalysisResponse | null>(null);
+  const [satelliteLoading, setSatelliteLoading] = useState(false);
   
   // Upload state
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -211,10 +215,37 @@ export default function ApplicationDetailPage() {
         documentUrls,
       });
       setAnalysisResult(res);
+      // Persist potential impacts as riskSummary for MoM draft enrichment
+      if (res.potentialImpacts?.length) {
+        updateApplication(application.id, {
+          riskSummary: res.potentialImpacts.join('; '),
+        });
+      }
     } catch {
       toast({ variant: "destructive", title: "AI Error", description: "Failed to run AI analysis." });
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const runSatelliteAnalysis = async () => {
+    if (!application.coordinates) return;
+    setSatelliteLoading(true);
+    try {
+      const res = await analyzeSatellite({
+        lat: application.coordinates.lat,
+        lng: application.coordinates.lng,
+        buffer_km: 5,
+      });
+      if (res.data) {
+        setSatelliteResult(res.data);
+      } else {
+        toast({ variant: "destructive", title: "Satellite Error", description: res.error || "Failed to fetch satellite data." });
+      }
+    } catch {
+      toast({ variant: "destructive", title: "Satellite Error", description: "Failed to connect to GIS service." });
+    } finally {
+      setSatelliteLoading(false);
     }
   };
 
@@ -419,15 +450,78 @@ export default function ApplicationDetailPage() {
                   : "No GIS coordinates have been provided for this application."}
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {application.coordinates ? (
-                <MapPicker
-                  mode="display"
-                  value={application.coordinates}
-                  category={application.category}
-                  height={400}
-                  showAnalysis={true}
-                />
+                <>
+                  <MapPicker
+                    mode="display"
+                    value={application.coordinates}
+                    category={application.category}
+                    height={400}
+                    showAnalysis={true}
+                  />
+                  {/* Sentinel-2 NDVI Satellite Analysis Panel */}
+                  <div className="border rounded-xl p-4 bg-muted/30">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <Navigation className="h-4 w-4 text-primary" />
+                        <h4 className="font-semibold text-sm">Sentinel-2 Vegetation Analysis (NDVI)</h4>
+                      </div>
+                      <Button size="sm" variant="outline" onClick={runSatelliteAnalysis} disabled={satelliteLoading}>
+                        {satelliteLoading ? "Fetching..." : satelliteResult ? "Refresh" : "Fetch Satellite Data"}
+                      </Button>
+                    </div>
+                    {satelliteResult ? (
+                      <div className="grid md:grid-cols-2 gap-4 text-sm">
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Mean NDVI</span>
+                            <span className="font-mono font-bold text-primary">{satelliteResult.ndvi.mean_ndvi.toFixed(3)}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Vegetation Class</span>
+                            <span className="font-semibold capitalize">{satelliteResult.ndvi.vegetation_class.replace(/_/g, ' ')}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Vegetation Cover</span>
+                            <span className="font-semibold">{satelliteResult.ndvi.vegetation_cover_pct.toFixed(1)}%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Acquisition Date</span>
+                            <span className="font-mono text-xs">{satelliteResult.acquisition_date}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Cloud Cover</span>
+                            <span>{satelliteResult.cloud_cover_pct.toFixed(1)}%</span>
+                          </div>
+                          {satelliteResult.change_detection && (
+                            <div className="flex justify-between">
+                              <span className="text-muted-foreground">Trend (6 months)</span>
+                              <span className={cn("font-semibold capitalize", satelliteResult.change_detection.trend === 'improving' ? 'text-green-600' : satelliteResult.change_detection.trend === 'declining' ? 'text-red-600' : 'text-amber-600')}>
+                                {satelliteResult.change_detection.trend}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold text-muted-foreground uppercase">Land Use Breakdown</p>
+                          {Object.entries(satelliteResult.land_use_breakdown).map(([key, val]) => (
+                            <div key={key} className="flex justify-between">
+                              <span className="text-muted-foreground capitalize">{key.replace(/_/g, ' ')}</span>
+                              <span className="font-mono text-xs">{(val as number).toFixed(1)}%</span>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="md:col-span-2 p-3 bg-card rounded-lg border text-xs text-foreground/80">
+                          <p className="font-semibold mb-1 text-primary">AI Recommendation</p>
+                          <p>{satelliteResult.recommendation}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Click &quot;Fetch Satellite Data&quot; to retrieve Sentinel-2 NDVI vegetation analysis for this site.</p>
+                    )}
+                  </div>
+                </>
               ) : (
                 <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed">
                   <MapPin className="mx-auto h-8 w-8 mb-2 opacity-30" />

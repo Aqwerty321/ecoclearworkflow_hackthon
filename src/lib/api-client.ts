@@ -266,6 +266,57 @@ export async function checkIntersection(
   );
 }
 
+// ─────────────────────── Satellite / NDVI Analysis ────────────────────
+
+export interface SatelliteAnalysisRequest {
+  lat: number;
+  lng: number;
+  buffer_km?: number;
+  date_from?: string;
+  date_to?: string;
+}
+
+export interface NDVIResult {
+  mean_ndvi: number;
+  min_ndvi: number;
+  max_ndvi: number;
+  std_ndvi: number;
+  vegetation_class: string;
+  vegetation_cover_pct: number;
+}
+
+export interface SatelliteAnalysisResponse {
+  lat: number;
+  lng: number;
+  buffer_km: number;
+  acquisition_date: string;
+  satellite: string;
+  cloud_cover_pct: number;
+  ndvi: NDVIResult;
+  land_use_breakdown: Record<string, number>;
+  change_detection: {
+    period: string;
+    previous_ndvi: number;
+    current_ndvi: number;
+    change: number;
+    trend: string;
+    deforestation_risk: string;
+  } | null;
+  recommendation: string;
+  data_source: string;
+}
+
+export async function analyzeSatellite(
+  request: SatelliteAnalysisRequest
+): Promise<ServiceResponse<SatelliteAnalysisResponse>> {
+  return fetchService<SatelliteAnalysisResponse>(
+    `${GIS_SERVICE_URL}/api/gis/satellite`,
+    { method: 'POST', body: JSON.stringify(request) },
+    'gis-service',
+    30000
+  );
+}
+
 // ─────────────────────── Health Checks ────────────────────────────────
 
 export async function checkAIAgentHealth(): Promise<ServiceResponse<{ status: string }>> {

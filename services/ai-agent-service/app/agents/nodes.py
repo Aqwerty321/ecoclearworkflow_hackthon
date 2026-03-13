@@ -374,9 +374,15 @@ Respond with ONLY valid JSON."""
                  f"Approved: {review.get('approved', True)} | "
                  f"Issues: {len(review.get('issues', []))}")
 
-    # Attach trace to final result
+    # Attach trace and reflector quality data to final result
     final_result = result.copy()
     final_result["agent_trace"] = trace
+    final_result["reflector_quality_score"] = review.get("quality_score")
+    # Surface reflector adjustments when quality is not fully approved
+    if not review.get("approved", True):
+        final_result["reflector_adjustments"] = review.get("adjustments", review.get("issues", []))
+    else:
+        final_result["reflector_adjustments"] = review.get("adjustments", [])
 
     return {
         **state,

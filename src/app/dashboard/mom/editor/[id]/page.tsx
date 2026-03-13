@@ -85,6 +85,7 @@ export default function MoMEditorPage() {
         industrySector: application.industrySector,
         category: application.category,
         location: application.location,
+        environmentalRiskSummary: application.riskSummary,
       });
       setFinalMoM(draft);
       updateApplicationStatus(application.id, 'MoMGenerated');
