@@ -13,6 +13,7 @@ import Link from "next/link";
 import { GradientText } from "@/components/ui/gradient-text";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function Home() {
   const { login, currentUser, hydrated, firebaseConnected } = useAppStore();
@@ -44,13 +45,20 @@ export default function Home() {
       setError(
         firebaseConnected
           ? "Invalid email or password."
-          : "User not found. Try: admin@ecoclear.gov, john@builder.com, sarah@ecoclear.gov, or mike@ecoclear.gov"
+          : "User not found. Check your email and password."
       );
     }
     setLoading(false);
   };
 
-  if (!hydrated) return null;
+  if (!hydrated) return (
+    <div className="fixed inset-0 flex items-center justify-center">
+      <div className="w-full max-w-md space-y-4 px-4">
+        <Skeleton className="h-12 w-48 mx-auto rounded-xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
+      </div>
+    </div>
+  );
 
   const features = [
     { icon: FileCheck, title: "Proponents", desc: "Submit and track EC applications in real-time." },
@@ -137,7 +145,7 @@ export default function Home() {
                   />
                   {!firebaseConnected && (
                     <p className="text-[10px] text-muted-foreground italic">
-                      Demo mode: admin@ecoclear.gov, john@builder.com, sarah@ecoclear.gov, mike@ecoclear.gov
+                      Demo mode active — use your assigned credentials
                     </p>
                   )}
                 </div>

@@ -11,6 +11,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { GradientText } from "@/components/ui/gradient-text";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function RegisterPage() {
   const { register, currentUser, hydrated } = useAppStore();
@@ -51,7 +52,14 @@ export default function RegisterPage() {
     setLoading(false);
   };
 
-  if (!hydrated) return null;
+  if (!hydrated) return (
+    <div className="fixed inset-0 flex items-center justify-center">
+      <div className="w-full max-w-md space-y-4 px-4">
+        <Skeleton className="h-8 w-40 mx-auto rounded-xl" />
+        <Skeleton className="h-80 w-full rounded-2xl" />
+      </div>
+    </div>
+  );
 
   return (
     <div className="fixed inset-0 overflow-auto">

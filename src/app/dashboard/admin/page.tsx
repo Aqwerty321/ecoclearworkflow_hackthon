@@ -14,11 +14,12 @@ import { GradientText } from "@/components/ui/gradient-text";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { CountUp } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
+import { DashboardSkeleton } from "@/components/ui/page-skeleton";
 
 export default function AdminDashboardPage() {
   const { applications, users, sectors, templates, currentUser, hydrated } = useAppStore();
 
-  if (!hydrated) return null;
+  if (!hydrated) return <DashboardSkeleton />;
   if (currentUser?.role !== 'Admin') {
     return <div className="p-8 text-center text-muted-foreground">Unauthorized</div>;
   }

@@ -322,7 +322,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const existing = data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
       if (existing) return { user: null, error: 'This email is already registered. Try signing in.' };
       const newUser: User = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         name,
         email,
         role: 'Project Proponent',
@@ -368,7 +368,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } else {
       const newApp: Application = {
         ...app,
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         status: 'Draft',
         paymentStatus: 'pending',
         createdAt: now,
@@ -414,7 +414,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } else {
       const newDoc: Document = {
         ...docData,
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         uploadedAt: now,
       };
       saveLocal({ ...data, documents: [...data.documents, newDoc] });
@@ -428,7 +428,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     } else {
       const newComment: EDSComment = {
         ...comment,
-        id: Math.random().toString(36).substr(2, 9),
+        id: crypto.randomUUID(),
         createdAt: now,
       };
       saveLocal({ ...data, comments: [...data.comments, newComment] });
@@ -463,7 +463,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (useFirebase) {
       addDoc(collection(db!, SECTORS), sector);
     } else {
-      const newSector: Sector = { ...sector, id: Math.random().toString(36).substr(2, 9) };
+      const newSector: Sector = { ...sector, id: crypto.randomUUID() };
       saveLocal({ ...data, sectors: [...data.sectors, newSector] });
     }
   }, [useFirebase, data, saveLocal]);
@@ -490,7 +490,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (useFirebase) {
       addDoc(collection(db!, TEMPLATES), { ...template, createdAt: now });
     } else {
-      const newTemplate: Template = { ...template, id: Math.random().toString(36).substr(2, 9), createdAt: now };
+      const newTemplate: Template = { ...template, id: crypto.randomUUID(), createdAt: now };
       saveLocal({ ...data, templates: [...data.templates, newTemplate] });
     }
   }, [useFirebase, data, saveLocal]);
@@ -533,7 +533,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (useFirebase) {
       addDoc(collection(db!, USERS), { ...user, createdAt: now });
     } else {
-      const newUser: User = { ...user, id: Math.random().toString(36).substr(2, 9), createdAt: now };
+      const newUser: User = { ...user, id: crypto.randomUUID(), createdAt: now };
       saveLocal({ ...data, users: [...data.users, newUser] });
     }
   }, [useFirebase, data, saveLocal]);
