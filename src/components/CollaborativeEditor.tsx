@@ -23,6 +23,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import * as Y from "yjs";
 import { WebrtcProvider } from "y-webrtc";
+import { HocuspocusProvider } from "@hocuspocus/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,7 @@ import {
   Users,
   Wifi,
   WifiOff,
+  Server,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -68,6 +70,10 @@ interface CollaborativeEditorProps {
   placeholder?: string;
   /** CSS class for the editor container */
   className?: string;
+  /** Hocuspocus WebSocket URL (if available, uses server sync; else falls back to WebRTC) */
+  hocuspocusUrl?: string;
+  /** Auth token for Hocuspocus server */
+  hocuspocusToken?: string;
 }
 
 export function CollaborativeEditor({
@@ -79,37 +85,68 @@ export function CollaborativeEditor({
   readOnly = false,
   placeholder = "Start typing...",
   className,
+  hocuspocusUrl,
+  hocuspocusToken,
 }: CollaborativeEditorProps) {
   const [connectedPeers, setConnectedPeers] = useState(0);
   const [synced, setSynced] = useState(false);
+  const [serverMode, setServerMode] = useState(false);
+
+  // Detect Hocuspocus server availability
+  // Default URL from env var, prop override, or skip
+  const wsUrl = hocuspocusUrl || (typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_COLLAB_WS_URL || "") : "");
 
   // Create Yjs document and providers
   const { ydoc, provider, indexeddbProvider } = useMemo(() => {
     const doc = new Y.Doc();
 
-    // WebRTC provider for peer-to-peer sync (no server needed)
-    const webrtcProvider = new WebrtcProvider(`ecoclear-mom-${documentId}`, doc, {
-      signaling: ["wss://signaling.yjs.dev"],
-    });
+    let syncProvider: WebrtcProvider | HocuspocusProvider;
+
+    if (wsUrl) {
+      // Tier 3: Hocuspocus server-authoritative sync
+      syncProvider = new HocuspocusProvider({
+        url: wsUrl,
+        name: `ecoclear-mom-${documentId}`,
+        document: doc,
+        token: hocuspocusToken || "ecoclear-collab-dev-secret",
+      });
+      setServerMode(true);
+    } else {
+      // Tier 1 fallback: WebRTC peer-to-peer sync
+      syncProvider = new WebrtcProvider(`ecoclear-mom-${documentId}`, doc, {
+        signaling: ["wss://signaling.yjs.dev"],
+      });
+      setServerMode(false);
+    }
 
     // IndexedDB persistence for offline-first editing
     const idbProvider = new IndexeddbPersistence(`ecoclear-mom-${documentId}`, doc);
 
-    return { ydoc: doc, provider: webrtcProvider, indexeddbProvider: idbProvider };
-  }, [documentId]);
+    return { ydoc: doc, provider: syncProvider, indexeddbProvider: idbProvider };
+  }, [documentId, wsUrl, hocuspocusToken]);
 
   // Track peer connections
   useEffect(() => {
+    const awareness = provider.awareness;
+    if (!awareness) {
+      setSynced(true);
+      return () => {
+        provider.destroy();
+        indexeddbProvider.destroy();
+        ydoc.destroy();
+      };
+    }
+
     const handlePeers = () => {
-      setConnectedPeers(provider.awareness.getStates().size - 1);
+      setConnectedPeers(awareness.getStates().size - 1);
     };
-    provider.awareness.on("change", handlePeers);
+    awareness.on("change", handlePeers);
     handlePeers();
 
     indexeddbProvider.on("synced", () => setSynced(true));
 
     return () => {
-      provider.awareness.off("change", handlePeers);
+      awareness.off("change", handlePeers);
       provider.destroy();
       indexeddbProvider.destroy();
       ydoc.destroy();
@@ -280,6 +317,11 @@ export function CollaborativeEditor({
 
         {/* Collaboration status */}
         <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+          {serverMode && (
+            <div className="flex items-center gap-1 text-blue-500 dark:text-blue-400" title="Hocuspocus server sync">
+              <Server className="h-3 w-3" />
+            </div>
+          )}
           {connectedPeers > 0 ? (
             <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
               <Wifi className="h-3 w-3" />

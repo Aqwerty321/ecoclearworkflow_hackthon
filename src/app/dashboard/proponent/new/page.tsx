@@ -12,11 +12,12 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Category, CG_DISTRICTS } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MapPin, Layers, Navigation } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MapPin, Layers, Navigation, Fingerprint } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import { AadhaarEKYC } from "@/components/AadhaarEKYC";
 import dynamic from "next/dynamic";
 import { checkProximity } from "@/lib/gis-data";
 
@@ -33,6 +34,7 @@ const MapPicker = dynamic(() => import("@/components/MapPicker"), {
 });
 
 const STEPS = [
+  { title: "Identity (eKYC)", description: "Aadhaar-based identity verification", icon: Fingerprint },
   { title: "Project Details", description: "Basic project information", icon: FileText },
   { title: "Site Location", description: "GIS coordinates and eco-zone check", icon: MapPin },
   { title: "Description", description: "Environmental context and scope", icon: Layers },
@@ -54,6 +56,8 @@ export default function NewApplicationPage() {
     district: "",
     coordinates: null as { lat: number; lng: number } | null,
   });
+  const [ekycVerified, setEkycVerified] = useState(false);
+  const [ekycIdentity, setEkycIdentity] = useState<{ name: string; maskedAadhaar: string } | null>(null);
 
   // Proximity analysis for the selected coordinates
   const proximityResults = useMemo(() => {
@@ -68,13 +72,17 @@ export default function NewApplicationPage() {
 
   const canProceed = () => {
     if (step === 0) {
-      return formData.projectName && formData.industrySector && formData.location && formData.district;
+      // eKYC step — must be verified or skipped
+      return ekycVerified;
     }
     if (step === 1) {
+      return formData.projectName && formData.industrySector && formData.location && formData.district;
+    }
+    if (step === 2) {
       // Map step — coordinates recommended but not strictly required
       return true;
     }
-    if (step === 2) {
+    if (step === 3) {
       return formData.description.length > 10;
     }
     return true;
@@ -159,8 +167,42 @@ export default function NewApplicationPage() {
           </CardHeader>
 
           <CardContent className="space-y-6 pt-8">
-            {/* Step 1: Project Details */}
+            {/* Step 0: Aadhaar eKYC Identity Verification */}
             {step === 0 && (
+              <div className="animate-fade-in space-y-4">
+                <p className="text-sm text-muted-foreground">
+                  As per CECB regulations, Project Proponents must verify their identity via
+                  Aadhaar-based e-KYC (UIDAI) before submitting an Environmental Clearance application.
+                </p>
+                <AadhaarEKYC
+                  onVerified={(identity) => {
+                    setEkycVerified(true);
+                    setEkycIdentity({ name: identity.name, maskedAadhaar: identity.maskedAadhaar });
+                  }}
+                />
+                {ekycVerified && ekycIdentity && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 p-3 rounded-lg">
+                    <CheckCircle2 className="h-4 w-4" />
+                    Identity verified: {ekycIdentity.name} ({ekycIdentity.maskedAadhaar})
+                  </div>
+                )}
+                {!ekycVerified && (
+                  <Button
+                    variant="link"
+                    className="text-xs text-muted-foreground p-0 h-auto"
+                    onClick={() => {
+                      setEkycVerified(true);
+                      setEkycIdentity({ name: "Demo User (Skipped)", maskedAadhaar: "XXXX-XXXX-0000" });
+                    }}
+                  >
+                    Skip for demo (not available in production)
+                  </Button>
+                )}
+              </div>
+            )}
+
+            {/* Step 1: Project Details */}
+            {step === 1 && (
               <div className="animate-fade-in space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
@@ -252,7 +294,7 @@ export default function NewApplicationPage() {
             )}
 
             {/* Step 2: Site Location (GIS Map) */}
-            {step === 1 && (
+            {step === 2 && (
               <div className="space-y-4 animate-fade-in">
                 <div className="flex items-center gap-2 mb-2">
                   <MapPin className="h-4 w-4 text-primary" />
@@ -278,7 +320,7 @@ export default function NewApplicationPage() {
             )}
 
             {/* Step 3: Description */}
-            {step === 2 && (
+            {step === 3 && (
               <div className="space-y-2 animate-fade-in">
                 <Label htmlFor="description" className="text-sm font-medium">Detailed Project Description</Label>
                 <Textarea
@@ -304,9 +346,16 @@ export default function NewApplicationPage() {
             )}
 
             {/* Step 4: Review */}
-            {step === 3 && (
+            {step === 4 && (
               <div className="space-y-4 animate-fade-in">
                 <h3 className="font-bold text-lg"><GradientText>Application Summary</GradientText></h3>
+                {ekycIdentity && (
+                  <div className="p-4 bg-green-50 dark:bg-green-500/10 rounded-lg border border-green-200 dark:border-green-500/30">
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Proponent Identity (eKYC)</h4>
+                    <p className="text-lg font-medium mt-1">{ekycIdentity.name}</p>
+                    <p className="text-sm text-muted-foreground font-mono">{ekycIdentity.maskedAadhaar}</p>
+                  </div>
+                )}
                 <div className="grid md:grid-cols-2 gap-4">
                   <div className="p-4 bg-muted/30 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
                     <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Project Name</h4>

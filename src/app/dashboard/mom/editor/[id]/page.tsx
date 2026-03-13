@@ -6,16 +6,18 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Brain, Save, FileCheck, CheckCircle2, Download, FileText, Lock, Loader2, Users } from "lucide-react";
+import { Brain, Save, FileCheck, CheckCircle2, Download, FileText, Lock, Loader2, Users, PenTool } from "lucide-react";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { DetailSkeleton } from "@/components/ui/page-skeleton";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { CollaborativeEditor } from "@/components/CollaborativeEditor";
+import { ESignDocument } from "@/components/ESignDocument";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
 import { generateMinutesOfMeetingDraft } from "@/ai/flows/generate-minutes-of-meeting-draft";
+import { hashString } from "@/lib/crypto";
 import jsPDF from "jspdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
@@ -38,6 +40,8 @@ export default function MoMEditorPage() {
     committeeDecision: existingMinutes.committeeDecision,
     conditions: existingMinutes.conditions,
   } : null);
+  const [momHash, setMomHash] = useState<string>("");
+  const [signed, setSigned] = useState(false);
 
   const isFinalized = application?.status === 'Finalized' || application?.status === 'MoMGenerated' && existingMinutes;
   const isLocked = application?.status === 'Finalized';
@@ -71,6 +75,10 @@ export default function MoMEditorPage() {
       });
       setFinalMoM(draft);
       updateApplicationStatus(application.id, 'MoMGenerated');
+      // Compute SHA-256 hash of the MoM content for eSign
+      const momText = `${draft.discussionSummary}\n${draft.committeeDecision}\n${draft.conditions.join('\n')}`;
+      const hash = await hashString(momText);
+      setMomHash(hash);
       // Persist the MoM
       saveMinutes({
         applicationId: application.id,
@@ -278,16 +286,37 @@ export default function MoMEditorPage() {
                   </ul>
                 </div>
               </CardContent>
-              <CardFooter className="flex gap-2 border-t border-border/50 p-4">
-                {!isLocked && (
-                  <ShimmerButton className="flex-1 font-bold" onClick={finalizeMoM}>Finalize & Approve EC</ShimmerButton>
+              <CardFooter className="flex flex-col gap-3 border-t border-border/50 p-4">
+                {/* eSign — Digital Signature before finalization */}
+                {!isLocked && finalMoM && momHash && !signed && (
+                  <ESignDocument
+                    documentHash={momHash}
+                    signerName={currentUser?.name || "CECB Official"}
+                    signerDesignation={currentUser?.role === "Scrutiny Team" ? "Scrutiny Officer" : currentUser?.role === "Admin" ? "Member Secretary" : "CECB Official"}
+                    documentName={`MoM — ${application.projectName}`}
+                    onSigned={() => setSigned(true)}
+                    className="w-full"
+                  />
                 )}
-                <Button variant="outline" size="icon" title="Export PDF" onClick={exportPDF} className="hover:border-primary/50 transition-colors">
-                  <Download className="h-4 w-4" />
-                </Button>
-                <Button variant="outline" size="icon" title="Export DOCX" onClick={exportDOCX} className="hover:border-primary/50 transition-colors">
-                  <FileText className="h-4 w-4" />
-                </Button>
+                {signed && !isLocked && (
+                  <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 p-2 rounded-lg w-full">
+                    <PenTool className="h-4 w-4" />
+                    Document digitally signed. You may now finalize.
+                  </div>
+                )}
+                <div className="flex gap-2 w-full">
+                  {!isLocked && (
+                    <ShimmerButton className="flex-1 font-bold" onClick={finalizeMoM} disabled={!signed && !!momHash}>
+                      {!signed && momHash ? "Sign before finalizing" : "Finalize & Approve EC"}
+                    </ShimmerButton>
+                  )}
+                  <Button variant="outline" size="icon" title="Export PDF" onClick={exportPDF} className="hover:border-primary/50 transition-colors">
+                    <Download className="h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" size="icon" title="Export DOCX" onClick={exportDOCX} className="hover:border-primary/50 transition-colors">
+                    <FileText className="h-4 w-4" />
+                  </Button>
+                </div>
               </CardFooter>
             </Card>
           )}

@@ -191,3 +191,120 @@ Enterprise-grade upgrade implementing the CECB Environmental Clearance workflow 
 - GIS Service uses UTM Zone 44N (EPSG:32644) projection for Chhattisgarh-accurate spatial calculations
 - Inter-service communication uses Docker network DNS names (e.g., `http://gis-service:8002`)
 - Frontend API client supports both server-side direct calls and browser-side proxy pattern
+
+### Tier 3 — Advanced Infrastructure & India Stack Integration
+
+#### 3.1 Hocuspocus Collaboration Service
+- Production-grade WebSocket CRDT server replacing peer-to-peer y-webrtc
+- SQLite persistence via `@hocuspocus/extension-database` (WAL mode for concurrent reads)
+- Document history table for audit trail
+- Connection authentication (token-based in production, open in dev)
+- Origin validation, throttling via `@hocuspocus/extension-throttle`
+- Structured logging via `@hocuspocus/extension-logger`
+- Graceful shutdown handlers (SIGINT/SIGTERM)
+- Dockerfile with Node.js 20 Alpine, non-root user, health check
+
+**Files:** `services/collaboration-service/src/server.js`, `package.json`, `Dockerfile`, `.env.example`
+
+#### 3.2 India Stack Integration — Aadhaar eKYC + CCA eSign
+- **Aadhaar e-KYC API stubs** (`india-stack.ts`): `initiateAadhaarOTP()`, `verifyAadhaarEKYC()` with realistic mock responses
+  - UIDAI-spec request/response interfaces (AadhaarEKYCRequest, AadhaarEKYCResponse)
+  - 12-digit Aadhaar validation, masked storage (last 4 only), consent enforcement
+  - Simulated latency for realistic demo UX
+- **CCA eSign API stubs** (`india-stack.ts`): `initiateESignOTP()`, `executeESign()`, `verifyESignature()`
+  - PKCS#7 mock signature generation with X.509 certificate details
+  - Short-term certificate model (30-min validity per CCA spec)
+  - IT Act 2000 Section 3A compliance references
+- **AadhaarEKYC component** — Full Aadhaar verification UI with OTP flow
+  - XXXX XXXX XXXX formatted input, consent checkbox
+  - Verified identity display (name, DOB, masked Aadhaar)
+  - Wired into proponent application form as Step 0 (identity verification before project details)
+  - Skip option for demo mode
+- **ESignDocument component** — Digital signature UI with OTP authorization
+  - SHA-256 document hash display, signer info
+  - OTP entry with 6-digit validation
+  - Signed state shows certificate serial, issuer, validity
+  - IT Act 2000 legal disclaimer
+  - Wired into MoM editor finalization flow — eSign required before "Finalize & Approve EC"
+
+**Files:** `src/lib/india-stack.ts`, `src/components/AadhaarEKYC.tsx`, `src/components/ESignDocument.tsx`, `src/app/dashboard/proponent/new/page.tsx`, `src/app/dashboard/mom/editor/[id]/page.tsx`
+
+#### 3.3 LangSmith Observability
+- Explicit LangSmith tracing added to all LLM-calling agent nodes:
+  - Regulatory Analyzer Node: run name `ecoclear.regulatory_analyzer` with sector/category metadata
+  - Reflector/Critic Node: run name `ecoclear.reflector_critic` with risk level metadata
+  - EDS Generation Node: run name `ecoclear.eds_generator` with deficiency counts
+- `_trace_metadata()` helper for consistent trace naming, tags, and metadata
+- Activated via `LANGCHAIN_TRACING_V2=true` + `LANGCHAIN_API_KEY` environment variables
+- Project name configurable via `LANGCHAIN_PROJECT` (default: `ecoclear-scrutiny`)
+
+**Files:** `services/ai-agent-service/app/agents/nodes.py`
+
+#### 3.4 Sentinel-2 Satellite Analysis (NDVI)
+- Mock Sentinel-2 NDVI vegetation analysis module (`sentinel.py`)
+  - Coordinate-seeded random for reproducible results per location
+  - NDVI classification: dense_forest, moderate_vegetation, sparse_vegetation, grassland, barren, urban, water
+  - Land-use breakdown (forest, agriculture, grassland, urban, barren, water)
+  - 6-month change detection with deforestation risk assessment
+  - Environmental recommendations based on NDVI thresholds
+- Wired into GIS service: `POST /api/gis/satellite` endpoint
+  - Request: lat, lng, buffer_km, optional date range
+  - Response: NDVI stats, vegetation class, land-use breakdown, change detection, recommendation
+- GIS service version bumped to 2.1.0
+
+**Files:** `services/gis-service/app/data/sentinel.py`, `services/gis-service/app/main.py`
+
+#### 3.5 Turborepo Monorepo Configuration
+- `turbo.json` with build/dev/lint/test pipeline definitions
+- Proper dependency ordering: build depends on `^build` (topological)
+- Output caching for build artifacts and `.next` directories
+- Dev and lint tasks marked as persistent (no caching)
+
+**Files:** `turbo.json`
+
+#### 3.6 Docker Compose — Collaboration Service
+- Added `collaboration` service container (port 8003)
+- SQLite volume mount (`collab-data`) for document persistence
+- Health check via Node.js `fetch()` probe
+- Shared `ecoclear-net` network
+
+**Files:** `docker-compose.yml`
+
+#### 3.7 CollaborativeEditor — Hocuspocus Dual-Mode
+- Installed `@hocuspocus/provider` npm package
+- CollaborativeEditor now supports dual sync mode:
+  - **Hocuspocus mode**: Server-authoritative WebSocket sync via `HocuspocusProvider` (when `NEXT_PUBLIC_COLLAB_WS_URL` env var or `hocuspocusUrl` prop is set)
+  - **WebRTC fallback**: Original peer-to-peer sync via `y-webrtc` (when no server URL configured)
+- Server mode indicator icon in toolbar
+- Null-safe awareness handling for provider compatibility
+- New props: `hocuspocusUrl`, `hocuspocusToken`
+
+**Files:** `src/components/CollaborativeEditor.tsx`, `package.json`
+
+#### 3.8 MoM eSign Finalization Flow
+- ESignDocument component integrated into MoM editor page
+- SHA-256 hash computed from MoM content (discussion + decision + conditions) via `hashString()`
+- Digital signature required before "Finalize & Approve EC" button is enabled
+- Signer designation derived from `currentUser.role` (Scrutiny Team → Scrutiny Officer, Admin → Member Secretary)
+- Signed confirmation banner shown after successful signature
+
+**Files:** `src/app/dashboard/mom/editor/[id]/page.tsx`
+
+#### 3.9 Proponent eKYC Registration
+- AadhaarEKYC component integrated as Step 0 of the new application wizard (5 steps total, was 4)
+- Identity verification required before proceeding to project details
+- Verified identity (name + masked Aadhaar) displayed in review step
+- "Skip for demo" link available for hackathon testing
+- Step progression updated throughout the form (0=eKYC, 1=Details, 2=Map, 3=Description, 4=Review)
+
+**Files:** `src/app/dashboard/proponent/new/page.tsx`
+
+### Dependencies Added (Tier 3)
+
+**Node.js (Next.js frontend):**
+- `@hocuspocus/provider` — WebSocket CRDT sync client for Hocuspocus server
+
+**Node.js (Collaboration Service):**
+- `@hocuspocus/server`, `@hocuspocus/extension-database`, `@hocuspocus/extension-logger`, `@hocuspocus/extension-throttle` — Hocuspocus WebSocket CRDT server
+- `better-sqlite3` — SQLite persistence (WAL mode)
+- `dotenv` — Environment configuration

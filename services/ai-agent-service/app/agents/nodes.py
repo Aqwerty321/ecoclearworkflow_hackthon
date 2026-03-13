@@ -12,9 +12,11 @@ Each node is a function that operates on the shared AgentState TypedDict.
 """
 
 import logging
+import os
 from typing import Any
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from langchain_core.tracers.context import tracing_v2_enabled
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.agents.regulations import (
@@ -24,6 +26,28 @@ from app.agents.regulations import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ─────────────────────── LangSmith Observability ──────────────────────
+# When LANGCHAIN_TRACING_V2=true and LANGCHAIN_API_KEY are set,
+# LangSmith captures traces automatically. This helper provides
+# explicit run naming and metadata for each node invocation.
+
+LANGSMITH_ENABLED = os.getenv("LANGCHAIN_TRACING_V2", "").lower() == "true"
+LANGSMITH_PROJECT = os.getenv("LANGCHAIN_PROJECT", "ecoclear-scrutiny")
+
+
+def _trace_metadata(node_name: str, **extra: Any) -> dict:
+    """Build LangSmith trace metadata for a node invocation."""
+    return {
+        "run_name": f"ecoclear.{node_name}",
+        "metadata": {
+            "node": node_name,
+            "service": "ai-agent-service",
+            "project": LANGSMITH_PROJECT,
+            **extra,
+        },
+        "tags": ["ecoclear", "scrutiny", node_name],
+    }
 
 
 def get_llm(temperature: float = 0.1) -> ChatGoogleGenerativeAI:
@@ -147,7 +171,13 @@ Respond with ONLY valid JSON (no markdown code fences)."""
         HumanMessage(content=prompt),
     ]
 
-    response = llm.invoke(messages)
+    # LangSmith tracing: explicit run naming for regulatory analysis
+    trace_kwargs = _trace_metadata(
+        "regulatory_analyzer",
+        sector=context.get("sector", ""),
+        category=context.get("category", ""),
+    )
+    response = llm.invoke(messages, config={"run_name": trace_kwargs["run_name"], "metadata": trace_kwargs["metadata"], "tags": trace_kwargs["tags"]})
 
     # Parse LLM response
     import json
@@ -314,7 +344,13 @@ Respond with ONLY valid JSON."""
         HumanMessage(content=prompt),
     ]
 
-    response = llm.invoke(messages)
+    # LangSmith tracing: explicit run naming for reflector/critic
+    trace_kwargs = _trace_metadata(
+        "reflector_critic",
+        project_name=context.get("project_name", ""),
+        risk_level=result.get("overall_risk", ""),
+    )
+    response = llm.invoke(messages, config={"run_name": trace_kwargs["run_name"], "metadata": trace_kwargs["metadata"], "tags": trace_kwargs["tags"]})
 
     import json
     try:
@@ -413,7 +449,13 @@ Respond with ONLY valid JSON."""
         HumanMessage(content=prompt),
     ]
 
-    response = llm.invoke(messages)
+    # LangSmith tracing: explicit run naming for EDS generation
+    trace_kwargs = _trace_metadata(
+        "eds_generator",
+        deficiencies_count=len(deficiencies),
+        missing_docs_count=len(missing_docs),
+    )
+    response = llm.invoke(messages, config={"run_name": trace_kwargs["run_name"], "metadata": trace_kwargs["metadata"], "tags": trace_kwargs["tags"]})
 
     import json
     try:

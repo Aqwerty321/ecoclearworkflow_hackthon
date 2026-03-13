@@ -37,6 +37,11 @@ from app.data.eco_zones import (
     _project_to_wgs84,
     _create_circle_polygon,
 )
+from app.data.sentinel import (
+    SatelliteAnalysisRequest,
+    SatelliteAnalysisResponse,
+    generate_mock_satellite_analysis,
+)
 
 load_dotenv()
 
@@ -109,10 +114,10 @@ async def health_check():
     """Health check endpoint."""
     return HealthResponse(
         status="healthy",
-        version="2.0.0",
+        version="2.1.0",
         service="ecoclear-gis",
         zones_loaded=len(CG_ECO_ZONES),
-        spatial_engine="Shapely 2.x + PyProj",
+        spatial_engine="Shapely 2.x + PyProj + Sentinel-2 NDVI",
     )
 
 
@@ -349,6 +354,35 @@ async def check_intersection(request: IntersectionRequest):
     except Exception as e:
         logger.error(f"Intersection check failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Intersection check failed: {str(e)}")
+
+
+# ─────────────────────── Satellite Analysis (Sentinel-2 NDVI) ──────────
+
+
+@app.post("/api/gis/satellite", response_model=SatelliteAnalysisResponse)
+async def satellite_analysis(request: SatelliteAnalysisRequest):
+    """
+    Sentinel-2 satellite vegetation analysis.
+
+    Provides NDVI (Normalized Difference Vegetation Index) analysis
+    for a given location, including land-use breakdown and change detection.
+    Uses mock data for hackathon; production would connect to Copernicus CDSE.
+    """
+    try:
+        result = generate_mock_satellite_analysis(
+            lat=request.lat,
+            lng=request.lng,
+            buffer_km=request.buffer_km,
+        )
+        logger.info(
+            f"Satellite analysis for ({request.lat}, {request.lng}): "
+            f"NDVI={result.ndvi.mean_ndvi}, class={result.ndvi.vegetation_class}"
+        )
+        return result
+
+    except Exception as e:
+        logger.error(f"Satellite analysis failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Satellite analysis failed: {str(e)}")
 
 
 # ─────────────────────── Entry Point ───────────────────────────────────
