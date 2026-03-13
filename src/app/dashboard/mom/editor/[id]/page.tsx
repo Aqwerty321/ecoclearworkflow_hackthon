@@ -4,9 +4,8 @@
 import { useAppStore } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Brain, Save, FileCheck, CheckCircle2, Download, FileText, Lock, Loader2, Users, PenTool } from "lucide-react";
+import { Brain, Save, FileCheck, CheckCircle2, Download, FileText, Lock, Loader2, Users, PenTool, LayoutTemplate } from "lucide-react";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { DetailSkeleton } from "@/components/ui/page-skeleton";
@@ -18,6 +17,8 @@ import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
 import { generateMinutesOfMeetingDraft } from "@/ai/flows/generate-minutes-of-meeting-draft";
 import { hashString } from "@/lib/crypto";
+import { buildTemplateVars, substituteTemplateVars } from "@/lib/template-vars";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import jsPDF from "jspdf";
 import { Document, Packer, Paragraph, TextRun, HeadingLevel } from "docx";
 import { saveAs } from "file-saver";
@@ -25,7 +26,7 @@ import { saveAs } from "file-saver";
 export default function MoMEditorPage() {
   const params = useParams();
   const { id } = params;
-  const { applications, gists, upsertGist, updateApplicationStatus, saveMinutes, minutes, currentUser } = useAppStore();
+  const { applications, gists, upsertGist, updateApplicationStatus, saveMinutes, minutes, currentUser, templates, users } = useAppStore();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -42,6 +43,18 @@ export default function MoMEditorPage() {
   } : null);
   const [momHash, setMomHash] = useState<string>("");
   const [signed, setSigned] = useState(false);
+
+  // Gist templates (type === 'gist') for the template picker
+  const gistTemplates = templates.filter(t => t.type === 'gist');
+
+  const handleApplyTemplate = (templateId: string) => {
+    const tpl = gistTemplates.find(t => t.id === templateId);
+    if (!tpl || !application) return;
+    const proponent = users.find(u => u.id === application.applicantId) ?? null;
+    const vars = buildTemplateVars(application, proponent, currentUser ?? null);
+    const substituted = substituteTemplateVars(tpl.content, vars);
+    setEditedGist(substituted);
+  };
 
   const isFinalized = application?.status === 'Finalized' || (application?.status === 'MoMGenerated' && !!existingMinutes);
   const isLocked = application?.status === 'Finalized';
@@ -215,6 +228,21 @@ export default function MoMEditorPage() {
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
             <div className="space-y-2">
+              {!isLocked && gistTemplates.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <LayoutTemplate className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  <Select onValueChange={handleApplyTemplate}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Load from template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {gistTemplates.map(t => (
+                        <SelectItem key={t.id} value={t.id}>{t.templateName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <Label className="flex items-center gap-2">
                 Current Gist Text
                 <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -288,16 +316,32 @@ export default function MoMEditorPage() {
               </CardContent>
               <CardFooter className="flex flex-col gap-3 border-t border-border/50 p-4">
                 {/* eSign — Digital Signature before finalization */}
-                {!isLocked && finalMoM && momHash && !signed && (
-                  <ESignDocument
-                    documentHash={momHash}
-                    signerName={currentUser?.name || "CECB Official"}
-                    signerDesignation={currentUser?.role === "Scrutiny Team" ? "Scrutiny Officer" : currentUser?.role === "Admin" ? "Member Secretary" : "CECB Official"}
-                    documentName={`MoM — ${application.projectName}`}
-                    onSigned={() => setSigned(true)}
-                    className="w-full"
-                  />
-                )}
+                 {!isLocked && finalMoM && momHash && !signed && (
+                   <ESignDocument
+                     documentHash={momHash}
+                     signerName={currentUser?.name || "CECB Official"}
+                     signerDesignation={currentUser?.role === "Scrutiny Team" ? "Scrutiny Officer" : currentUser?.role === "Admin" ? "Member Secretary" : "CECB Official"}
+                     documentName={`MoM — ${application.projectName}`}
+                     onSigned={(sig) => {
+                       setSigned(true);
+                       // Persist signature metadata into the MinutesOfMeeting record
+                       if (finalMoM) {
+                         saveMinutes({
+                           applicationId: application.id,
+                           discussionSummary: finalMoM.discussionSummary,
+                           committeeDecision: finalMoM.committeeDecision,
+                           conditions: finalMoM.conditions,
+                           esignCertificateSerial: sig.certificateSerial,
+                           esignIssuer: sig.issuer,
+                           esignSignedAt: sig.signedAt,
+                           esignSignerName: currentUser?.name,
+                           esignDocumentHash: sig.documentHash,
+                         });
+                       }
+                     }}
+                     className="w-full"
+                   />
+                 )}
                 {signed && !isLocked && (
                   <div className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-500/10 p-2 rounded-lg w-full">
                     <PenTool className="h-4 w-4" />

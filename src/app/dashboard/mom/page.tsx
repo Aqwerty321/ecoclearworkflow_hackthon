@@ -4,9 +4,12 @@
 import { useAppStore } from "@/lib/store";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Calendar, FileEdit, CheckCircle2, ShieldCheck } from "lucide-react";
+import { Calendar, FileEdit, CheckCircle2, ShieldCheck, CalendarPlus } from "lucide-react";
 import Link from "next/link";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
@@ -14,9 +17,16 @@ import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { CountUp } from "@/components/ui/count-up";
 import { TableSkeleton } from "@/components/ui/page-skeleton";
 import { filterApplicationsByAccess } from "@/lib/types";
+import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function MeetingDeskPage() {
-  const { applications, currentUser, hydrated } = useAppStore();
+  const { applications, currentUser, hydrated, updateApplication } = useAppStore();
+  const { toast } = useToast();
+
+  const [schedulingAppId, setSchedulingAppId] = useState<string | null>(null);
+  const [meetingDate, setMeetingDate] = useState("");
+  const [meetingTime, setMeetingTime] = useState("10:00");
 
   if (!hydrated) return <TableSkeleton />;
 
@@ -40,6 +50,19 @@ export default function MeetingDeskPage() {
     (currentUser?.assignedSectors && currentUser.assignedSectors.length > 0) ||
     !!currentUser?.assignedDistrict
   );
+
+  const handleSchedule = () => {
+    if (!schedulingAppId || !meetingDate) return;
+    const iso = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
+    updateApplication(schedulingAppId, { scheduledMeetingAt: iso });
+    toast({
+      title: "Meeting Scheduled",
+      description: `Committee meeting set for ${new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`,
+    });
+    setSchedulingAppId(null);
+    setMeetingDate("");
+    setMeetingTime("10:00");
+  };
 
   return (
     <div className="space-y-6">
@@ -108,6 +131,7 @@ export default function MeetingDeskPage() {
                     <TableHead>Project Name</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Meeting</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -117,7 +141,29 @@ export default function MeetingDeskPage() {
                       <TableCell className="font-medium">{app.projectName}</TableCell>
                       <TableCell>{app.category}</TableCell>
                       <TableCell><StatusBadge status={app.status} /></TableCell>
-                      <TableCell className="text-right">
+                      <TableCell>
+                        {app.scheduledMeetingAt ? (
+                          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">
+                            {new Date(app.scheduledMeetingAt).toLocaleDateString('en-IN')}
+                            {' '}
+                            {new Date(app.scheduledMeetingAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Not scheduled</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right space-x-1">
+                        {app.status === 'Referred' && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="opacity-70 group-hover:opacity-100 transition-opacity"
+                            onClick={() => { setSchedulingAppId(app.id); setMeetingDate(''); }}
+                          >
+                            <CalendarPlus className="h-3.5 w-3.5 mr-1" />
+                            Schedule
+                          </Button>
+                        )}
                         {app.status === 'Referred' || app.status === 'MoMGenerated' ? (
                           <Button variant="default" size="sm" asChild className="opacity-70 group-hover:opacity-100 transition-opacity">
                             <Link href={`/dashboard/mom/editor/${app.id}`}>
@@ -141,6 +187,48 @@ export default function MeetingDeskPage() {
           </CardContent>
         </Card>
       </AnimatedContainer>
+
+      {/* Schedule Meeting Dialog */}
+      <Dialog open={!!schedulingAppId} onOpenChange={() => setSchedulingAppId(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarPlus className="h-5 w-5 text-primary" />
+              Schedule Committee Meeting
+            </DialogTitle>
+            <DialogDescription>
+              Set the date and time for the environmental committee meeting for this application.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-2">
+              <Label htmlFor="meeting-date">Meeting Date</Label>
+              <Input
+                id="meeting-date"
+                type="date"
+                value={meetingDate}
+                onChange={(e) => setMeetingDate(e.target.value)}
+                min={new Date().toISOString().split('T')[0]}
+                className="h-11"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="meeting-time">Meeting Time</Label>
+              <Input
+                id="meeting-time"
+                type="time"
+                value={meetingTime}
+                onChange={(e) => setMeetingTime(e.target.value)}
+                className="h-11"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSchedulingAppId(null)}>Cancel</Button>
+            <Button onClick={handleSchedule} disabled={!meetingDate}>Confirm Schedule</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

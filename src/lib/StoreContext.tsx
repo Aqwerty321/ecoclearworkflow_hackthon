@@ -71,6 +71,7 @@ interface StoreActions {
   deleteTemplate: (id: string) => void;
   saveMinutes: (minutes: Omit<MinutesOfMeeting, 'id'>) => void;
   addUser: (user: Omit<User, 'id' | 'createdAt'>) => void;
+  updateApplication: (id: string, updates: Partial<Omit<Application, 'id' | 'createdAt'>>) => void;
 }
 
 type StoreContextType = StoreData & StoreActions;
@@ -493,6 +494,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [useFirebase, data, saveLocal]);
 
+  const updateApplication = useCallback((id: string, updates: Partial<Omit<Application, 'id' | 'createdAt'>>) => {
+    const now = new Date().toISOString();
+    if (useFirebase) {
+      updateDoc(doc(db!, APPLICATIONS, id), { ...updates, updatedAt: now });
+    } else {
+      const applications = data.applications.map(a => a.id === id ? { ...a, ...updates, updatedAt: now } : a);
+      saveLocal({ ...data, applications });
+    }
+  }, [useFirebase, data, saveLocal]);
+
   const value: StoreContextType = {
     ...data,
     hydrated,
@@ -515,6 +526,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     deleteTemplate,
     saveMinutes,
     addUser,
+    updateApplication,
   };
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;

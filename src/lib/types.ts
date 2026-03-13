@@ -48,6 +48,8 @@ export interface Application {
   transactionId?: string;   // UPI transaction reference
   paidAmount?: number;       // Amount paid in INR
   paidAt?: string;           // ISO timestamp of payment
+  // Meeting scheduling
+  scheduledMeetingAt?: string;  // ISO timestamp of the scheduled committee meeting
 }
 
 export interface Document {
@@ -107,6 +109,12 @@ export interface MinutesOfMeeting {
   recommendations?: string[];
   finalDocumentUrl?: string;
   finalizedAt?: string;
+  // eSign fields — persisted after digital signature
+  esignCertificateSerial?: string;
+  esignIssuer?: string;
+  esignSignedAt?: string;
+  esignSignerName?: string;
+  esignDocumentHash?: string;
 }
 
 // Valid status transitions
