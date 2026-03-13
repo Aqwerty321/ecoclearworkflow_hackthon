@@ -117,41 +117,60 @@ export default function MoMEditorPage() {
     if (!finalMoM) return;
     const doc = new jsPDF();
     const margin = 20;
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const maxY = pageHeight - margin;
     let y = margin;
 
+    const checkPageBreak = (neededHeight: number) => {
+      if (y + neededHeight > maxY) {
+        doc.addPage();
+        y = margin;
+      }
+    };
+
     doc.setFontSize(18);
+    checkPageBreak(10);
     doc.text("Minutes of Meeting", margin, y);
     y += 10;
     doc.setFontSize(12);
+    checkPageBreak(7);
     doc.text(`Project: ${application.projectName}`, margin, y);
     y += 7;
+    checkPageBreak(7);
     doc.text(`Sector: ${application.industrySector} | Category: ${application.category}`, margin, y);
     y += 7;
+    checkPageBreak(14);
     doc.text(`Date: ${new Date().toLocaleDateString()}`, margin, y);
     y += 14;
 
     doc.setFontSize(14);
+    checkPageBreak(8);
     doc.text("Discussion Summary", margin, y);
     y += 8;
     doc.setFontSize(10);
     const summaryLines = doc.splitTextToSize(finalMoM.discussionSummary, 170);
+    checkPageBreak(summaryLines.length * 5 + 10);
     doc.text(summaryLines, margin, y);
     y += summaryLines.length * 5 + 10;
 
     doc.setFontSize(14);
+    checkPageBreak(8);
     doc.text("Committee Decision", margin, y);
     y += 8;
     doc.setFontSize(10);
     const decisionLines = doc.splitTextToSize(finalMoM.committeeDecision, 170);
+    checkPageBreak(decisionLines.length * 5 + 10);
     doc.text(decisionLines, margin, y);
     y += decisionLines.length * 5 + 10;
 
     doc.setFontSize(14);
+    checkPageBreak(8);
     doc.text("Conditions", margin, y);
     y += 8;
     doc.setFontSize(10);
     finalMoM.conditions.forEach((c: string, i: number) => {
       const condLines = doc.splitTextToSize(`${i + 1}. ${c}`, 170);
+      checkPageBreak(condLines.length * 5 + 3);
       doc.text(condLines, margin, y);
       y += condLines.length * 5 + 3;
     });

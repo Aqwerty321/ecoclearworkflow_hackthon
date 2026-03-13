@@ -12,7 +12,7 @@
  * (Protean eGov / NSDL) using short-term X.509 certificates.
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -63,6 +63,22 @@ export function ESignDocument({
   const [signature, setSignature] = useState<ESignResponse["signature"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const startCooldown = useCallback(() => {
+    setResendCooldown(30);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0; }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
+  }, []);
 
   const handleInitiate = useCallback(async () => {
     setError(null);
@@ -72,6 +88,7 @@ export function ESignDocument({
       if (result.success) {
         setTransactionId(result.transactionId);
         setStatus("otp_sent");
+        startCooldown();
       } else {
         setError("Failed to initiate eSign. Please try again.");
       }
@@ -80,7 +97,7 @@ export function ESignDocument({
     } finally {
       setLoading(false);
     }
-  }, [signerName, documentHash]);
+  }, [signerName, documentHash, startCooldown]);
 
   const handleSign = useCallback(async () => {
     setError(null);
@@ -223,6 +240,14 @@ export function ESignDocument({
               <p className="text-xs text-muted-foreground">
                 OTP sent via Aadhaar-linked mobile for eSign authorization
               </p>
+              <button
+                type="button"
+                onClick={handleInitiate}
+                disabled={resendCooldown > 0 || loading}
+                className="text-xs text-primary disabled:text-muted-foreground underline-offset-2 hover:underline disabled:no-underline transition-colors"
+              >
+                {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : "Resend OTP"}
+              </button>
             </div>
 
             <Button

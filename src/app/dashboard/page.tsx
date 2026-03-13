@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { FileText, Plus, Eye, Clock, CheckCircle2, AlertCircle, ArrowRight } from "lucide-react";
+import { FileText, Plus, Eye, Clock, CheckCircle2, AlertCircle, ArrowRight, ClipboardCheck, Users, LayoutTemplate, CalendarDays, Layers } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect } from "react";
@@ -41,6 +41,33 @@ export default function DashboardPage() {
 
   const isProponent = currentUser.role === 'Project Proponent';
   const isAdmin = currentUser.role === 'Admin';
+  const isScrutiny = currentUser.role === 'Scrutiny Team';
+  const isMoM = currentUser.role === 'MoM Team';
+
+  type QuickAction = { label: string; href: string; icon: React.ElementType; description: string };
+  const quickActions: QuickAction[] = isProponent
+    ? [
+        { label: "New Application", href: "/dashboard/proponent/new", icon: Plus, description: "Start a fresh EC application" },
+        { label: "My Applications", href: "/dashboard/my-applications", icon: FileText, description: "Track your submissions" },
+      ]
+    : isScrutiny
+    ? [
+        { label: "Scrutiny Pool", href: "/dashboard/scrutiny", icon: ClipboardCheck, description: "Review pending applications" },
+        { label: "All Applications", href: "/dashboard/applications", icon: Layers, description: "Browse all applications" },
+      ]
+    : isMoM
+    ? [
+        { label: "MoM List", href: "/dashboard/mom", icon: CalendarDays, description: "Referred applications list" },
+        { label: "All Applications", href: "/dashboard/applications", icon: Layers, description: "Browse all applications" },
+      ]
+    : isAdmin
+    ? [
+        { label: "Manage Users", href: "/dashboard/admin/users", icon: Users, description: "Add or edit user accounts" },
+        { label: "Manage Sectors", href: "/dashboard/admin/sectors", icon: Layers, description: "Configure industry sectors" },
+        { label: "Templates", href: "/dashboard/admin/templates", icon: LayoutTemplate, description: "Edit MoM & gist templates" },
+        { label: "New Application", href: "/dashboard/proponent/new", icon: Plus, description: "Create an application" },
+      ]
+    : [];
   
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -98,6 +125,30 @@ export default function DashboardPage() {
           </AnimatedContainer>
         ))}
       </div>
+
+      {/* Quick Actions */}
+      {quickActions.length > 0 && (
+        <AnimatedContainer animation="slide-up" delay={280}>
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground mb-3">Quick Actions</p>
+            <div className="flex flex-wrap gap-3">
+              {quickActions.map((action) => (
+                <Link key={action.href} href={action.href}>
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl border border-border/60 bg-card hover:border-primary/40 hover:bg-primary/5 transition-all duration-200 group cursor-pointer min-w-[180px]">
+                    <div className="p-2 rounded-lg bg-primary/10 text-primary group-hover:bg-primary/20 transition-colors">
+                      <action.icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold leading-tight">{action.label}</p>
+                      <p className="text-[11px] text-muted-foreground leading-tight">{action.description}</p>
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </AnimatedContainer>
+      )}
 
       {/* Recent Applications Table */}
       <AnimatedContainer animation="slide-up" delay={350}>

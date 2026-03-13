@@ -9,7 +9,7 @@
  * Flow: Enter Aadhaar → Send OTP → Enter OTP → Verify Identity
  */
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +49,26 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [consent, setConsent] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Start 30s cooldown timer
+  const startCooldown = useCallback(() => {
+    setResendCooldown(30);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown(prev => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
+
+  useEffect(() => {
+    return () => { if (cooldownRef.current) clearInterval(cooldownRef.current); };
+  }, []);
 
   const handleSendOTP = useCallback(async () => {
     setError(null);
@@ -58,6 +78,7 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
       if (result.success) {
         setTransactionId(result.transactionId);
         setStatus("otp_sent");
+        startCooldown();
       } else {
         setError(result.message);
       }
@@ -66,7 +87,7 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
     } finally {
       setLoading(false);
     }
-  }, [aadhaarNumber]);
+  }, [aadhaarNumber, startCooldown]);
 
   const handleVerify = useCallback(async () => {
     setError(null);
@@ -198,6 +219,14 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
               <p className="text-xs text-muted-foreground">
                 OTP sent to your Aadhaar-linked mobile number
               </p>
+              <button
+                type="button"
+                onClick={handleSendOTP}
+                disabled={resendCooldown > 0 || loading}
+                className="text-xs text-primary disabled:text-muted-foreground underline-offset-2 hover:underline disabled:no-underline transition-colors"
+              >
+                {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : "Resend OTP"}
+              </button>
             </div>
 
             {/* Consent checkbox */}

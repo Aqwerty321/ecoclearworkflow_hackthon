@@ -10,6 +10,7 @@ import { Eye, ClipboardCheck, Search, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { useState, useMemo } from "react";
+import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { TableSkeleton } from "@/components/ui/page-skeleton";
@@ -20,6 +21,8 @@ import { filterApplicationsByAccess } from "@/lib/types";
 export default function ScrutinyPoolPage() {
   const { applications, currentUser, hydrated } = useAppStore();
   const [search, setSearch] = useState("");
+  const [sectorFilter, setSectorFilter] = useState<string>("all");
+  const [statusTab, setStatusTab] = useState<string>("all");
 
   if (!hydrated) return <TableSkeleton />;
 
@@ -30,10 +33,19 @@ export default function ScrutinyPoolPage() {
   // Apply ABAC filtering — users only see applications matching their sector/district assignments
   const accessibleApps = currentUser ? filterApplicationsByAccess(currentUser, applications) : applications;
 
-  const poolApps = accessibleApps.filter(app => 
-    ['Submitted', 'UnderScrutiny', 'EDS'].includes(app.status) &&
-    (app.projectName.toLowerCase().includes(search.toLowerCase()) || app.id.includes(search))
+  // Derive unique sectors from accessible apps
+  const availableSectors = useMemo(
+    () => Array.from(new Set(accessibleApps.map(a => a.industrySector))).sort(),
+    [accessibleApps]
   );
+
+  const poolApps = accessibleApps.filter(app => {
+    const inPool = ['Submitted', 'UnderScrutiny', 'EDS'].includes(app.status);
+    const matchesSearch = app.projectName.toLowerCase().includes(search.toLowerCase()) || app.id.includes(search);
+    const matchesSector = sectorFilter === 'all' || app.industrySector === sectorFilter;
+    const matchesStatus = statusTab === 'all' || app.status === statusTab;
+    return inPool && matchesSearch && matchesSector && matchesStatus;
+  });
 
   const submittedCount = accessibleApps.filter(a => a.status === 'Submitted').length;
   const underScrutinyCount = accessibleApps.filter(a => a.status === 'UnderScrutiny').length;
@@ -74,6 +86,64 @@ export default function ScrutinyPoolPage() {
               onChange={(e) => setSearch(e.target.value)}
             />
           </div>
+        </div>
+      </AnimatedContainer>
+
+      {/* Status tabs + sector chips */}
+      <AnimatedContainer animation="slide-up" delay={80}>
+        <div className="space-y-3">
+          {/* Status tabs */}
+          <div className="flex flex-wrap gap-1.5">
+            {[
+              { label: "All", value: "all" },
+              { label: "Submitted", value: "Submitted" },
+              { label: "Under Scrutiny", value: "UnderScrutiny" },
+              { label: "EDS", value: "EDS" },
+            ].map(tab => (
+              <button
+                key={tab.value}
+                onClick={() => setStatusTab(tab.value)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                  statusTab === tab.value
+                    ? "bg-primary text-primary-foreground border-primary"
+                    : "bg-background border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          {/* Sector chips */}
+          {availableSectors.length > 0 && (
+            <div className="flex flex-wrap gap-1.5">
+              <button
+                onClick={() => setSectorFilter('all')}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                  sectorFilter === 'all'
+                    ? "bg-secondary text-secondary-foreground border-secondary"
+                    : "bg-background border-border text-muted-foreground hover:border-secondary/60 hover:text-foreground"
+                )}
+              >
+                All Sectors
+              </button>
+              {availableSectors.map(sector => (
+                <button
+                  key={sector}
+                  onClick={() => setSectorFilter(sector)}
+                  className={cn(
+                    "px-3 py-1 rounded-full text-xs font-medium border transition-all",
+                    sectorFilter === sector
+                      ? "bg-secondary text-secondary-foreground border-secondary"
+                      : "bg-background border-border text-muted-foreground hover:border-secondary/60 hover:text-foreground"
+                  )}
+                >
+                  {sector}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       </AnimatedContainer>
 
