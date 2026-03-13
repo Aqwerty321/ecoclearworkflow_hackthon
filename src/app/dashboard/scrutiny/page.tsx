@@ -6,15 +6,16 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Eye, ClipboardCheck, Search } from "lucide-react";
+import { Eye, ClipboardCheck, Search, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { TableSkeleton } from "@/components/ui/page-skeleton";
 import { CountUp } from "@/components/ui/count-up";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
+import { filterApplicationsByAccess } from "@/lib/types";
 
 export default function ScrutinyPoolPage() {
   const { applications, currentUser, hydrated } = useAppStore();
@@ -26,14 +27,23 @@ export default function ScrutinyPoolPage() {
     return <div className="p-8 text-center text-muted-foreground">Unauthorized Access</div>;
   }
 
-  const poolApps = applications.filter(app => 
+  // Apply ABAC filtering — users only see applications matching their sector/district assignments
+  const accessibleApps = currentUser ? filterApplicationsByAccess(currentUser, applications) : applications;
+
+  const poolApps = accessibleApps.filter(app => 
     ['Submitted', 'UnderScrutiny', 'EDS'].includes(app.status) &&
     (app.projectName.toLowerCase().includes(search.toLowerCase()) || app.id.includes(search))
   );
 
-  const submittedCount = applications.filter(a => a.status === 'Submitted').length;
-  const underScrutinyCount = applications.filter(a => a.status === 'UnderScrutiny').length;
-  const edsCount = applications.filter(a => a.status === 'EDS').length;
+  const submittedCount = accessibleApps.filter(a => a.status === 'Submitted').length;
+  const underScrutinyCount = accessibleApps.filter(a => a.status === 'UnderScrutiny').length;
+  const edsCount = accessibleApps.filter(a => a.status === 'EDS').length;
+
+  // Show ABAC indicator if user has restricted access
+  const hasAbacRestrictions = currentUser?.role !== 'Admin' && (
+    (currentUser?.assignedSectors && currentUser.assignedSectors.length > 0) ||
+    !!currentUser?.assignedDistrict
+  );
 
   return (
     <div className="space-y-6">
@@ -45,6 +55,15 @@ export default function ScrutinyPoolPage() {
               <GradientText>Scrutiny Pool</GradientText>
             </h1>
             <p className="text-muted-foreground">Technical review and document verification workspace</p>
+            {hasAbacRestrictions && (
+              <div className="flex items-center gap-1.5 mt-1">
+                <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+                <span className="text-xs text-primary font-medium">
+                  Filtered by: {currentUser?.assignedSectors?.join(', ') || 'All sectors'}
+                  {currentUser?.assignedDistrict && ` · ${currentUser.assignedDistrict}`}
+                </span>
+              </div>
+            )}
           </div>
           <div className="relative w-full md:w-72">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

@@ -6,13 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
-import { Calendar, FileEdit, CheckCircle2 } from "lucide-react";
+import { Calendar, FileEdit, CheckCircle2, ShieldCheck } from "lucide-react";
 import Link from "next/link";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { CountUp } from "@/components/ui/count-up";
 import { TableSkeleton } from "@/components/ui/page-skeleton";
+import { filterApplicationsByAccess } from "@/lib/types";
 
 export default function MeetingDeskPage() {
   const { applications, currentUser, hydrated } = useAppStore();
@@ -23,13 +24,22 @@ export default function MeetingDeskPage() {
     return <div className="p-8 text-center text-muted-foreground">Unauthorized Access</div>;
   }
 
-  const meetingApps = applications.filter(app => 
+  // Apply ABAC filtering — users only see applications matching their sector/district assignments
+  const accessibleApps = currentUser ? filterApplicationsByAccess(currentUser, applications) : applications;
+
+  const meetingApps = accessibleApps.filter(app => 
     ['Referred', 'MoMGenerated', 'Finalized'].includes(app.status)
   );
 
-  const referredCount = applications.filter(a => a.status === 'Referred').length;
-  const momCount = applications.filter(a => a.status === 'MoMGenerated').length;
-  const finalizedCount = applications.filter(a => a.status === 'Finalized').length;
+  const referredCount = accessibleApps.filter(a => a.status === 'Referred').length;
+  const momCount = accessibleApps.filter(a => a.status === 'MoMGenerated').length;
+  const finalizedCount = accessibleApps.filter(a => a.status === 'Finalized').length;
+
+  // Show ABAC indicator if user has restricted access
+  const hasAbacRestrictions = currentUser?.role !== 'Admin' && (
+    (currentUser?.assignedSectors && currentUser.assignedSectors.length > 0) ||
+    !!currentUser?.assignedDistrict
+  );
 
   return (
     <div className="space-y-6">
@@ -40,6 +50,15 @@ export default function MeetingDeskPage() {
             <GradientText>Meeting Desk</GradientText>
           </h1>
           <p className="text-muted-foreground">Manage committee meeting gists and draft Minutes of Meeting (MoM)</p>
+          {hasAbacRestrictions && (
+            <div className="flex items-center gap-1.5 mt-1">
+              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
+              <span className="text-xs text-primary font-medium">
+                Filtered by: {currentUser?.assignedSectors?.join(', ') || 'All sectors'}
+                {currentUser?.assignedDistrict && ` · ${currentUser.assignedDistrict}`}
+              </span>
+            </div>
+          )}
         </div>
       </AnimatedContainer>
 

@@ -6,11 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Brain, Save, FileCheck, CheckCircle2, Download, FileText, Lock, Loader2 } from "lucide-react";
+import { Brain, Save, FileCheck, CheckCircle2, Download, FileText, Lock, Loader2, Users } from "lucide-react";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { DetailSkeleton } from "@/components/ui/page-skeleton";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import { CollaborativeEditor } from "@/components/CollaborativeEditor";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
@@ -22,7 +23,7 @@ import { saveAs } from "file-saver";
 export default function MoMEditorPage() {
   const params = useParams();
   const { id } = params;
-  const { applications, gists, upsertGist, updateApplicationStatus, saveMinutes, minutes } = useAppStore();
+  const { applications, gists, upsertGist, updateApplicationStatus, saveMinutes, minutes, currentUser } = useAppStore();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -206,13 +207,21 @@ export default function MoMEditorPage() {
           </CardHeader>
           <CardContent className="pt-6 space-y-4">
             <div className="space-y-2">
-              <Label>Current Gist Text</Label>
-              <Textarea 
-                value={editedGist}
-                onChange={(e) => setEditedGist(e.target.value)}
-                className="min-h-[400px] font-mono text-sm leading-relaxed focus:ring-2 focus:ring-primary/20"
+              <Label className="flex items-center gap-2">
+                Current Gist Text
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Users className="h-3 w-3" /> Real-time collaborative (CRDT)
+                </span>
+              </Label>
+              <CollaborativeEditor
+                documentId={application.id}
+                userName={currentUser?.name || "Anonymous"}
+                userRole={currentUser?.role}
+                initialContent={existingGist?.editedText || ""}
+                onChange={(html, text) => setEditedGist(text)}
+                readOnly={!!isLocked}
                 placeholder="The committee discussed..."
-                readOnly={isLocked}
+                className="min-h-[400px]"
               />
             </div>
           </CardContent>

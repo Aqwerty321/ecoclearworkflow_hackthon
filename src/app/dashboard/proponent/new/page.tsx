@@ -8,18 +8,33 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Category } from "@/lib/types";
+import { Category, CG_DISTRICTS } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MapPin, Layers } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MapPin, Layers, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import dynamic from "next/dynamic";
+import { checkProximity } from "@/lib/gis-data";
+
+const MapPicker = dynamic(() => import("@/components/MapPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[350px] rounded-xl border border-border bg-muted flex items-center justify-center">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Navigation className="h-5 w-5 animate-pulse" />
+        <span className="text-sm">Loading map...</span>
+      </div>
+    </div>
+  ),
+});
 
 const STEPS = [
   { title: "Project Details", description: "Basic project information", icon: FileText },
+  { title: "Site Location", description: "GIS coordinates and eco-zone check", icon: MapPin },
   { title: "Description", description: "Environmental context and scope", icon: Layers },
   { title: "Review & Submit", description: "Verify and create draft", icon: CheckCircle2 },
 ];
@@ -36,13 +51,30 @@ export default function NewApplicationPage() {
     category: "B2" as Category,
     description: "",
     location: "",
+    district: "",
+    coordinates: null as { lat: number; lng: number } | null,
   });
+
+  // Proximity analysis for the selected coordinates
+  const proximityResults = useMemo(() => {
+    if (!formData.coordinates) return null;
+    return checkProximity(formData.coordinates.lat, formData.coordinates.lng);
+  }, [formData.coordinates]);
+
+  const highRiskCount = useMemo(() => {
+    if (!proximityResults) return 0;
+    return proximityResults.filter(p => p.riskLevel === "critical" || p.riskLevel === "high").length;
+  }, [proximityResults]);
 
   const canProceed = () => {
     if (step === 0) {
-      return formData.projectName && formData.industrySector && formData.location;
+      return formData.projectName && formData.industrySector && formData.location && formData.district;
     }
     if (step === 1) {
+      // Map step — coordinates recommended but not strictly required
+      return true;
+    }
+    if (step === 2) {
       return formData.description.length > 10;
     }
     return true;
@@ -54,6 +86,7 @@ export default function NewApplicationPage() {
     const app = await addApplication({
       ...formData,
       applicantId: currentUser.id,
+      coordinates: formData.coordinates ?? undefined,
     });
 
     toast({
@@ -177,27 +210,75 @@ export default function NewApplicationPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="location" className="text-sm font-medium">
+                    <Label htmlFor="district" className="text-sm font-medium">
                       <span className="flex items-center gap-1.5">
                         <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                        Project Location
+                        District
                       </span>
                     </Label>
-                    <Input
-                      id="location"
-                      placeholder="District, State"
-                      required
-                      className="h-11 focus:ring-2 focus:ring-primary/20"
-                      value={formData.location}
-                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                    />
+                    <Select
+                      value={formData.district}
+                      onValueChange={(v) => setFormData({ ...formData, district: v })}
+                    >
+                      <SelectTrigger className="h-11">
+                        <SelectValue placeholder="Select District" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {CG_DISTRICTS.map((d) => (
+                          <SelectItem key={d} value={d}>{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="location" className="text-sm font-medium">
+                    <span className="flex items-center gap-1.5">
+                      <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                      Project Location (Address)
+                    </span>
+                  </Label>
+                  <Input
+                    id="location"
+                    placeholder="Village/Town, Tehsil, District"
+                    required
+                    className="h-11 focus:ring-2 focus:ring-primary/20"
+                    value={formData.location}
+                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                  />
                 </div>
               </div>
             )}
 
-            {/* Step 2: Description */}
+            {/* Step 2: Site Location (GIS Map) */}
             {step === 1 && (
+              <div className="space-y-4 animate-fade-in">
+                <div className="flex items-center gap-2 mb-2">
+                  <MapPin className="h-4 w-4 text-primary" />
+                  <p className="text-sm text-muted-foreground">
+                    Click on the map to mark the exact project site location. The system will automatically check proximity to eco-sensitive zones in Chhattisgarh.
+                  </p>
+                </div>
+                <MapPicker
+                  mode="pick"
+                  value={formData.coordinates}
+                  onChange={(coords) => setFormData({ ...formData, coordinates: coords })}
+                  category={formData.category}
+                  height={350}
+                  showAnalysis={true}
+                />
+                {!formData.coordinates && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <MapPin className="h-3 w-3" />
+                    No coordinates selected. You can add them later, but eco-zone analysis requires a location.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Step 3: Description */}
+            {step === 2 && (
               <div className="space-y-2 animate-fade-in">
                 <Label htmlFor="description" className="text-sm font-medium">Detailed Project Description</Label>
                 <Textarea
@@ -222,8 +303,8 @@ export default function NewApplicationPage() {
               </div>
             )}
 
-            {/* Step 3: Review */}
-            {step === 2 && (
+            {/* Step 4: Review */}
+            {step === 3 && (
               <div className="space-y-4 animate-fade-in">
                 <h3 className="font-bold text-lg"><GradientText>Application Summary</GradientText></h3>
                 <div className="grid md:grid-cols-2 gap-4">
@@ -242,8 +323,33 @@ export default function NewApplicationPage() {
                   <div className="p-4 bg-muted/30 rounded-lg border border-border/50 hover:border-primary/30 transition-colors">
                     <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Location</h4>
                     <p className="text-lg font-medium mt-1">{formData.location}</p>
+                    {formData.district && (
+                      <p className="text-sm text-muted-foreground">District: {formData.district}</p>
+                    )}
                   </div>
                 </div>
+                {formData.coordinates && (
+                  <div className={cn(
+                    "p-4 rounded-lg border",
+                    highRiskCount > 0
+                      ? "bg-red-50 border-red-200 dark:bg-red-500/10 dark:border-red-500/30"
+                      : "bg-green-50 border-green-200 dark:bg-green-500/10 dark:border-green-500/30"
+                  )}>
+                    <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">GIS Coordinates</h4>
+                    <p className="text-sm font-mono mt-1">
+                      {formData.coordinates.lat.toFixed(5)}, {formData.coordinates.lng.toFixed(5)}
+                    </p>
+                    {highRiskCount > 0 ? (
+                      <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                        Warning: {highRiskCount} eco-sensitive zone{highRiskCount > 1 ? "s" : ""} nearby — additional clearances required
+                      </p>
+                    ) : (
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">
+                        No critical eco-zone conflicts detected
+                      </p>
+                    )}
+                  </div>
+                )}
                 <div className="p-4 bg-muted/30 rounded-lg border border-border/50">
                   <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wide">Project Description</h4>
                   <p className="mt-2 text-sm text-foreground/80 whitespace-pre-wrap leading-relaxed">{formData.description}</p>

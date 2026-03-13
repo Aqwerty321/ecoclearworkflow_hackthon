@@ -12,7 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw } from "lucide-react";
+import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw, ShieldCheck, ShieldAlert, MapPin, Navigation } from "lucide-react";
+import { UPIPayment, FEE_SCHEDULE } from "@/components/UPIPayment";
+import { computeSHA256 } from "@/lib/crypto";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
@@ -23,6 +25,19 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { DetailSkeleton } from "@/components/ui/page-skeleton";
+import dynamic from "next/dynamic";
+
+const MapPicker = dynamic(() => import("@/components/MapPicker"), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[350px] rounded-xl border border-border bg-muted flex items-center justify-center">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Navigation className="h-5 w-5 animate-pulse" />
+        <span className="text-sm">Loading map...</span>
+      </div>
+    </div>
+  ),
+});
 
 const DOCUMENT_TYPES = [
   "Environmental Report",
@@ -68,7 +83,6 @@ export default function ApplicationDetailPage() {
   
   // Payment state
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [paymentStep, setPaymentStep] = useState(0);
 
   const application = applications.find(a => a.id === id);
   const appDocs = documents.filter(d => d.applicationId === id);
@@ -95,7 +109,7 @@ export default function ApplicationDetailPage() {
     toast({ title: "Status Updated", description: message });
   };
 
-  // Document upload handler
+  // Document upload handler with SHA-256 integrity hashing
   const handleFileUpload = async () => {
     const file = fileInputRef.current?.files?.[0];
     if (!file) {
@@ -105,6 +119,9 @@ export default function ApplicationDetailPage() {
     
     setUploading(true);
     try {
+      // Compute SHA-256 hash for document integrity
+      const fileHash = await computeSHA256(file);
+
       if (firebaseConnected) {
         const storageRef = ref(storage!, `documents/${application.id}/${Date.now()}_${file.name}`);
         await uploadBytes(storageRef, file);
@@ -113,18 +130,24 @@ export default function ApplicationDetailPage() {
           applicationId: application.id, 
           name: file.name, 
           type: uploadDocType, 
-          fileUrl: downloadUrl 
+          fileUrl: downloadUrl,
+          sha256Hash: fileHash,
+          fileSize: file.size,
+          verified: true,
         });
       } else {
-        // Demo mode — simulated upload
+        // Demo mode — simulated upload with real hash
         addDocument({ 
           applicationId: application.id, 
           name: file.name, 
           type: uploadDocType, 
-          fileUrl: '#demo' 
+          fileUrl: '#demo',
+          sha256Hash: fileHash,
+          fileSize: file.size,
+          verified: true,
         });
       }
-      toast({ title: "Document Uploaded", description: `${file.name} uploaded successfully.` });
+      toast({ title: "Document Uploaded", description: `${file.name} uploaded with integrity hash.` });
       setUploadDialogOpen(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch {
@@ -151,11 +174,10 @@ export default function ApplicationDetailPage() {
     setEdsComment("");
   };
 
-  // Payment simulation
-  const handlePayment = () => {
+  // Payment via UPI
+  const handlePaymentComplete = (transactionId: string) => {
     updatePaymentStatus(application.id, 'paid');
-    setPaymentStep(2);
-    toast({ title: "Payment Successful", description: "Application fee has been paid via UPI." });
+    toast({ title: "Payment Successful", description: `Application fee paid. Txn: ${transactionId}` });
   };
 
   const runScrutinyAI = async () => {
@@ -217,7 +239,7 @@ export default function ApplicationDetailPage() {
               </Button>
             )}
             {isProponent && application.paymentStatus === 'pending' && (
-              <Button onClick={() => { setPaymentDialogOpen(true); setPaymentStep(0); }} variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">
+              <Button onClick={() => { setPaymentDialogOpen(true); }} variant="outline" className="text-green-600 border-green-600 hover:bg-green-50">
                 <CreditCard className="mr-2 h-4 w-4" /> Pay Application Fee
               </Button>
             )}
@@ -252,9 +274,12 @@ export default function ApplicationDetailPage() {
 
       <AnimatedContainer animation="slide-up" delay={200}>
       <Tabs defaultValue="details" className="w-full">
-        <TabsList className="grid w-full max-w-lg grid-cols-4 bg-muted/50">
+        <TabsList className="grid w-full max-w-2xl grid-cols-5 bg-muted/50">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="documents">Docs ({appDocs.length})</TabsTrigger>
+          <TabsTrigger value="gis">
+            <MapPin className="h-3.5 w-3.5 mr-1" /> GIS
+          </TabsTrigger>
           <TabsTrigger value="comments">EDS ({appComments.length})</TabsTrigger>
           <TabsTrigger value="scrutiny" disabled={!isScrutiny && !isMoM}>AI Scrutiny</TabsTrigger>
         </TabsList>
@@ -328,6 +353,23 @@ export default function ApplicationDetailPage() {
                         <div>
                           <p className="font-semibold text-sm">{doc.name}</p>
                           <p className="text-xs text-muted-foreground">{doc.type} &bull; {new Date(doc.uploadedAt).toLocaleDateString()}</p>
+                          {doc.sha256Hash && (
+                            <div className="flex items-center gap-1 mt-1">
+                              {doc.verified ? (
+                                <ShieldCheck className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <ShieldAlert className="h-3 w-3 text-amber-600" />
+                              )}
+                              <span className="text-[10px] font-mono text-muted-foreground" title={doc.sha256Hash}>
+                                SHA-256: {doc.sha256Hash.slice(0, 16)}...
+                              </span>
+                              {doc.fileSize && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  ({(doc.fileSize / 1024).toFixed(1)} KB)
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
                       {doc.fileUrl && doc.fileUrl !== '#' && doc.fileUrl !== '#demo' && (
@@ -339,6 +381,39 @@ export default function ApplicationDetailPage() {
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="gis" className="mt-6">
+          <Card className="shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <MapPin className="h-5 w-5 text-primary" />
+                <CardTitle className="text-lg">Site Location & Eco-Zone Analysis</CardTitle>
+              </div>
+              <CardDescription>
+                {application.coordinates
+                  ? `Project coordinates: ${application.coordinates.lat.toFixed(5)}, ${application.coordinates.lng.toFixed(5)}`
+                  : "No GIS coordinates have been provided for this application."}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {application.coordinates ? (
+                <MapPicker
+                  mode="display"
+                  value={application.coordinates}
+                  category={application.category}
+                  height={400}
+                  showAnalysis={true}
+                />
+              ) : (
+                <div className="text-center py-12 text-muted-foreground bg-muted/30 rounded-lg border-2 border-dashed">
+                  <MapPin className="mx-auto h-8 w-8 mb-2 opacity-30" />
+                  <p>No GIS coordinates provided.</p>
+                  <p className="text-xs mt-1">The proponent can add coordinates when creating or editing the application.</p>
                 </div>
               )}
             </CardContent>
@@ -489,69 +564,22 @@ export default function ApplicationDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* UPI Payment Simulation Dialog */}
+      {/* UPI Payment Dialog */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent>
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Application Fee Payment</DialogTitle>
             <DialogDescription>
-              {paymentStep === 0 && "Review payment details and proceed with UPI payment."}
-              {paymentStep === 1 && "Confirm your UPI payment."}
-              {paymentStep === 2 && "Payment completed successfully!"}
+              Pay via UPI — scan QR code or use deep-link on mobile.
             </DialogDescription>
           </DialogHeader>
-          
-          {paymentStep === 0 && (
-            <div className="space-y-4">
-              <div className="p-4 bg-muted/50 rounded-lg border space-y-2">
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Application</span>
-                  <span className="text-sm font-medium">{application.projectName}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-sm text-muted-foreground">Category</span>
-                  <span className="text-sm font-medium">{application.category}</span>
-                </div>
-                <div className="flex justify-between border-t pt-2">
-                  <span className="text-sm font-bold">Application Fee</span>
-                  <span className="text-sm font-bold text-primary">₹15,000.00</span>
-                </div>
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>Cancel</Button>
-                <Button onClick={() => setPaymentStep(1)}>
-                  <CreditCard className="mr-2 h-4 w-4" /> Pay via UPI
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-          
-          {paymentStep === 1 && (
-            <div className="space-y-4">
-              <div className="text-center p-6 bg-muted/50 rounded-lg border space-y-4">
-                <div className="mx-auto w-32 h-32 bg-white border-2 border-dashed rounded-lg flex items-center justify-center">
-                  <span className="text-xs text-muted-foreground text-center">UPI QR Code<br/>Placeholder</span>
-                </div>
-                <p className="text-sm font-medium">or enter UPI ID</p>
-                <Input placeholder="yourname@upi" className="max-w-xs mx-auto text-center" />
-              </div>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setPaymentStep(0)}>Back</Button>
-                <Button onClick={handlePayment} className="bg-green-600 hover:bg-green-700">
-                  <CheckCircle className="mr-2 h-4 w-4" /> Confirm Payment
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-          
-          {paymentStep === 2 && (
-            <div className="text-center space-y-4 py-4">
-              <CheckCircle className="mx-auto h-16 w-16 text-green-600" />
-              <p className="text-lg font-bold text-green-700">Payment Successful</p>
-              <p className="text-sm text-muted-foreground">Transaction ID: TXN{Date.now().toString().slice(-8)}</p>
-              <Button onClick={() => setPaymentDialogOpen(false)}>Done</Button>
-            </div>
-          )}
+          <UPIPayment
+            applicationId={application.id}
+            projectName={application.projectName}
+            category={application.category}
+            onPaymentComplete={handlePaymentComplete}
+            onCancel={() => setPaymentDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>

@@ -1,0 +1,62 @@
+Web2 Hackathon Problem Statement-2
+CECB (Chhattisgarh Environment Conservation Board)
+PS 02: Role Based Environmental Clearance System
+Domain : Workflow Systems : Environmental Governance : GovTech
+Background
+The environmental clearance process involves multiple stakeholders, complex documen
+tation, and manual meeting preparations.
+To improve transparency, efficiency, and speed, the PARIVESH 3.0 initiative proposes
+a modern digital workflow system for managing environmental clearance applications and
+meeting documentation.
+Problem Statement
+Develop a unified web portal that manages the complete lifecycle of an environmental
+clearance application from initial filing by a project proponent to the final publication of
+the Minutes of the Meeting.
+Core User Roles and Access Control
+The system must implement strict role based access control managed by a central ad
+ministrator.
+Admin
+• Secure login portal
+• Dynamic role assignment between Scrutiny Team and MoM Team
+• Provision master templates for meeting gist documents
+• Manage sector specific parameters
+Project Proponent or Recognized Qualified Professional
+• User registration and profile management
+• Selection of application category and industry sector
+• Multi step application filing form
+1
+• Secure document upload engine
+• Fee payment integration including QR code and UPI
+Scrutiny Team
+• Document verification and fee validation
+• Flag deficiencies using Essential Document Sought
+• Return applications for correction
+• Refer verified applications for meetings
+• Trigger automatic meeting gist generation
+MoM Team
+• Edit and refine generated meeting gist
+• Convert gist into formal Minutes of Meeting
+• Lock finalized MoM to prevent further editing
+Technical Requirements
+• Clean and modern web interface
+• Document export in Microsoft Word and PDF formats
+• Linear workflow status progression
+• Strong data security and role isolation
+Workflow Stages
+• Draft
+• Submitted
+• Under Scrutiny
+• Essential Document Sought
+• Referred
+• MoMGenerated
+• Finalized
+2
+Evaluation Criteria
+• Workflow completeness
+• UI quality
+• Automation logic
+• Payment integration
+• Role based security implementation
+Deliverables
+• Functional web application prototype
+• Source code repository
