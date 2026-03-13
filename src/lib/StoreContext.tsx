@@ -21,17 +21,30 @@ const PAYMENTS = 'payments';
 const MINUTES = 'minutesOfMeeting';
 
 // ---- Initial seed data (used only when Firestore is empty or unavailable) ----
+// Kept in sync with scripts/seed-firestore.mjs SEED_SECTORS
 const INITIAL_SECTORS: Sector[] = [
-  { id: '1', name: 'Mining', description: 'Mineral extraction and processing' },
-  { id: '2', name: 'Infrastructure', description: 'Roads, bridges, and public works' },
-  { id: '3', name: 'Energy', description: 'Power plants and renewable energy' },
+  { id: 'mining',     name: 'Mining & Quarrying',    description: 'Coal, iron ore, limestone, and other mineral extraction activities.' },
+  { id: 'thermal',    name: 'Thermal Power Plants',  description: 'Coal/gas-based electricity generation facilities (≥25 MW).' },
+  { id: 'coal-wash',  name: 'Coal Washeries',        description: 'Coal beneficiation and washing plants.' },
+  { id: 'iron-steel', name: 'Iron & Steel',          description: 'Integrated steel plants, sponge iron, ferro-alloy units.' },
+  { id: 'cement',     name: 'Cement',                description: 'Clinker grinding, rotary kiln, and cement manufacturing.' },
+  { id: 'chemical',   name: 'Chemical Industries',   description: 'Bulk chemicals, pesticides, dyes, and intermediates.' },
+  { id: 'petroleum',  name: 'Petroleum Products',    description: 'Refineries, storage depots, and petrochemical complexes.' },
+  { id: 'distillery', name: 'Distilleries',          description: 'Molasses, grain, and other alcohol distillation units.' },
+  { id: 'sugar',      name: 'Sugar',                 description: 'Cane crushing and sugar manufacturing plants.' },
+  { id: 'paper',      name: 'Paper & Pulp',          description: 'Wood/agro-based paper and pulp manufacturing.' },
+  { id: 'textile',    name: 'Textile & Dyeing',      description: 'Spinning, weaving, processing, and effluent-generating units.' },
+  { id: 'infra',      name: 'Infrastructure',        description: 'Highways, bridges, industrial parks, and area development.' },
+  { id: 'river',      name: 'River Valley Projects', description: 'Dams, barrages, hydro-power, and irrigation projects.' },
+  { id: 'food',       name: 'Food Processing',       description: 'Slaughterhouses, fish processing, and food manufacturing.' },
 ];
 
+// Kept in sync with scripts/seed-firestore.mjs SEED_USERS (offline/demo fallback only)
 const INITIAL_USERS: User[] = [
-  { id: 'admin-1', name: 'System Admin', email: 'admin@ecoclear.gov', role: 'Admin', createdAt: new Date().toISOString() },
-  { id: 'proponent-1', name: 'John Developer', email: 'john@builder.com', role: 'Project Proponent', createdAt: new Date().toISOString() },
-  { id: 'scrutiny-1', name: 'Sarah Scrutiny', email: 'sarah@ecoclear.gov', role: 'Scrutiny Team', createdAt: new Date().toISOString() },
-  { id: 'mom-1', name: 'Mike Meeting', email: 'mike@ecoclear.gov', role: 'MoM Team', createdAt: new Date().toISOString() },
+  { id: 'admin-1',    name: 'Admin CECB',    email: 'admin@ecoclear.gov', role: 'Admin',             assignedState: 'Chhattisgarh', createdAt: new Date().toISOString() },
+  { id: 'proponent-1', name: 'John Builder', email: 'john@builder.com',   role: 'Project Proponent', assignedState: 'Chhattisgarh', createdAt: new Date().toISOString() },
+  { id: 'scrutiny-1', name: 'Sarah EDS',     email: 'sarah@ecoclear.gov', role: 'Scrutiny Team',     assignedState: 'Chhattisgarh', assignedDistrict: 'Raipur',   assignedSectors: ['Mining & Quarrying', 'Thermal Power Plants', 'Iron & Steel', 'Coal Washeries'], createdAt: new Date().toISOString() },
+  { id: 'mom-1',      name: 'Mike MoM',      email: 'mike@ecoclear.gov',  role: 'MoM Team',          assignedState: 'Chhattisgarh', assignedDistrict: 'Bilaspur', assignedSectors: ['Chemical Industries', 'Cement', 'Distilleries', 'Thermal Power Plants'], createdAt: new Date().toISOString() },
 ];
 
 const STORAGE_KEY = 'ecoclear_storage';
