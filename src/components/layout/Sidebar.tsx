@@ -12,7 +12,8 @@ import {
   Layers,
   Briefcase,
   Shield,
-  ChevronRight
+  ChevronRight,
+  Bot
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -30,6 +31,7 @@ const menuItems: MenuItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard", roles: ["Admin", "Project Proponent", "Scrutiny Team", "MoM Team"], section: "Main" },
   { label: "My Applications", icon: Briefcase, href: "/dashboard/my-applications", roles: ["Project Proponent"], section: "Main" },
   { label: "New Application", icon: FilePlus, href: "/dashboard/proponent/new", roles: ["Project Proponent", "Admin"], section: "Main" },
+  { label: "AI Assistant", icon: Bot, href: "/dashboard/assistant", roles: ["Admin", "Project Proponent", "Scrutiny Team", "MoM Team"], section: "Main" },
   { label: "Scrutiny Pool", icon: ClipboardCheck, href: "/dashboard/scrutiny", roles: ["Scrutiny Team", "Admin"], section: "Review" },
   { label: "Meeting Desk", icon: Calendar, href: "/dashboard/mom", roles: ["MoM Team", "Admin"], section: "Review" },
   { label: "User Management", icon: Users, href: "/dashboard/admin/users", roles: ["Admin"], section: "Administration" },

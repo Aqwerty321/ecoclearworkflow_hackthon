@@ -18,6 +18,7 @@ import { CountUp } from "@/components/ui/count-up";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { filterApplicationsByAccess } from "@/lib/types";
 import type { ApplicationStatus } from "@/lib/types";
+import { SLABadge } from "@/components/SLABadge";
 
 const ALL_STATUSES: { label: string; value: ApplicationStatus | "all" }[] = [
   { label: "All", value: "all" },
@@ -261,6 +262,7 @@ export default function AllApplicationsPage() {
                     <TableHead>Sector</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>SLA</TableHead>
                     <TableHead>Payment</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
@@ -286,6 +288,9 @@ export default function AllApplicationsPage() {
                       </TableCell>
                       <TableCell>
                         <StatusBadge status={app.status} />
+                      </TableCell>
+                      <TableCell>
+                        <SLABadge application={app} compact />
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {app.paymentStatus}

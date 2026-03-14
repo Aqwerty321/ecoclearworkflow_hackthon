@@ -187,6 +187,54 @@ export function filterApplicationsByAccess(user: User, applications: Application
   return applications.filter(app => canAccessApplication(user, app));
 }
 
+// ---- SLA Deadline Tracker ----
+
+export type SLAStatus = 'on-track' | 'due-soon' | 'overdue' | 'not-applicable';
+
+/** SLA window in days for each in-pipeline status */
+export const SLA_DAYS: Partial<Record<ApplicationStatus, number>> = {
+  Submitted: 7,
+  UnderScrutiny: 30,
+  EDS: 14,
+  Referred: 21,
+  MoMGenerated: 14,
+};
+
+export interface SLAInfo {
+  status: SLAStatus;
+  daysElapsed: number;
+  daysAllowed: number;
+  daysRemaining: number;
+}
+
+/**
+ * Computes SLA status for an application.
+ * "due-soon" = less than 25% of SLA days remaining.
+ */
+export function getSLAInfo(application: Application): SLAInfo {
+  const allowedDays = SLA_DAYS[application.status];
+  if (!allowedDays) {
+    return { status: 'not-applicable', daysElapsed: 0, daysAllowed: 0, daysRemaining: 0 };
+  }
+
+  const updatedAt = new Date(application.updatedAt);
+  const now = new Date();
+  const daysElapsed = Math.floor((now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60 * 24));
+  const daysRemaining = allowedDays - daysElapsed;
+  const dueSoonThreshold = Math.ceil(allowedDays * 0.25);
+
+  let status: SLAStatus;
+  if (daysRemaining < 0) {
+    status = 'overdue';
+  } else if (daysRemaining <= dueSoonThreshold) {
+    status = 'due-soon';
+  } else {
+    status = 'on-track';
+  }
+
+  return { status, daysElapsed, daysAllowed: allowedDays, daysRemaining };
+}
+
 // ---- Chhattisgarh Districts ----
 export const CG_DISTRICTS = [
   "Raipur", "Bilaspur", "Durg", "Korba", "Rajnandgaon",

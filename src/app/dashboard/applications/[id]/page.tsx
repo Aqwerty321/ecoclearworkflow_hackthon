@@ -3,6 +3,7 @@
 
 import { useAppStore } from "@/lib/store";
 import { StatusBadge } from "@/components/StatusBadge";
+import { SLABadge } from "@/components/SLABadge";
 import { ApplicationTimeline } from "@/components/ApplicationTimeline";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -362,6 +363,7 @@ export default function ApplicationDetailPage() {
           <div className="flex items-center gap-3 flex-wrap">
             <h1 className="text-2xl md:text-3xl font-bold text-foreground">{application.projectName}</h1>
             <StatusBadge status={application.status} />
+            <SLABadge application={application} />
           </div>
           <p className="text-sm text-muted-foreground">ID: {application.id} &bull; Applied on {new Date(application.createdAt).toLocaleDateString()}</p>
         </div>

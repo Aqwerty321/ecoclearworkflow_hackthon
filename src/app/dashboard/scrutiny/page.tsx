@@ -17,6 +17,7 @@ import { TableSkeleton } from "@/components/ui/page-skeleton";
 import { CountUp } from "@/components/ui/count-up";
 import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { filterApplicationsByAccess } from "@/lib/types";
+import { SLABadge } from "@/components/SLABadge";
 
 export default function ScrutinyPoolPage() {
   const { applications, currentUser, hydrated } = useAppStore();
@@ -192,6 +193,7 @@ export default function ScrutinyPoolPage() {
                     <TableHead>Project Name</TableHead>
                     <TableHead>Sector</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>SLA</TableHead>
                     <TableHead>Last Updated</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -203,6 +205,7 @@ export default function ScrutinyPoolPage() {
                       <TableCell className="font-medium">{app.projectName}</TableCell>
                       <TableCell>{app.industrySector}</TableCell>
                       <TableCell><StatusBadge status={app.status} /></TableCell>
+                      <TableCell><SLABadge application={app} compact /></TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {new Date(app.updatedAt).toLocaleDateString()}
                       </TableCell>

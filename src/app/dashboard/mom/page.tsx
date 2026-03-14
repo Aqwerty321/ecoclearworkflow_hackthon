@@ -17,6 +17,7 @@ import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { CountUp } from "@/components/ui/count-up";
 import { TableSkeleton } from "@/components/ui/page-skeleton";
 import { filterApplicationsByAccess } from "@/lib/types";
+import { SLABadge } from "@/components/SLABadge";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 
@@ -145,6 +146,7 @@ export default function MeetingDeskPage() {
                     <TableHead>Project Name</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>SLA</TableHead>
                     <TableHead>Meeting</TableHead>
                     <TableHead className="text-right">Action</TableHead>
                   </TableRow>
@@ -155,6 +157,7 @@ export default function MeetingDeskPage() {
                       <TableCell className="font-medium">{app.projectName}</TableCell>
                       <TableCell>{app.category}</TableCell>
                       <TableCell><StatusBadge status={app.status} /></TableCell>
+                      <TableCell><SLABadge application={app} compact /></TableCell>
                       <TableCell>
                         {app.scheduledMeetingAt ? (
                           <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium">

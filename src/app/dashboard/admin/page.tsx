@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import {
   Users, Settings, Database, FileText, CheckCircle2, Clock,
-  ArrowRight, LayoutDashboard, Activity, ShieldCheck
+  ArrowRight, LayoutDashboard, Activity, ShieldCheck, TrendingUp, PieChart as PieIcon
 } from "lucide-react";
 import Link from "next/link";
 import { AnimatedContainer } from "@/components/ui/animated-container";
@@ -15,25 +15,42 @@ import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { CountUp } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
 import { DashboardSkeleton } from "@/components/ui/page-skeleton";
+import { getSLAInfo, SLA_DAYS } from "@/lib/types";
+import type { ApplicationStatus } from "@/lib/types";
+import { subMonths, format, isAfter, isBefore, startOfMonth, endOfMonth } from "date-fns";
 import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
+  BarChart, Bar,
+  XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend,
+  LineChart, Line, CartesianGrid,
 } from "recharts";
 
 // Tailwind → hex for recharts (can't use CSS variables inside SVG)
 const STATUS_COLORS: Record<string, string> = {
-  Draft:        "#94a3b8", // slate-400
-  Submitted:    "#60a5fa", // blue-400
-  UnderScrutiny:"#fbbf24", // amber-400
-  EDS:          "#c084fc", // purple-400
-  Referred:     "#818cf8", // indigo-400
-  MoMGenerated: "#2dd4bf", // teal-400
-  Finalized:    "#34d399", // emerald-400
+  Draft:        "#94a3b8",
+  Submitted:    "#60a5fa",
+  UnderScrutiny:"#fbbf24",
+  EDS:          "#c084fc",
+  Referred:     "#818cf8",
+  MoMGenerated: "#2dd4bf",
+  Finalized:    "#34d399",
+};
+
+const SECTOR_COLORS = [
+  "#60a5fa", "#f59e0b", "#34d399", "#c084fc", "#fb7185",
+  "#2dd4bf", "#818cf8", "#fbbf24", "#a3e635", "#f97316",
+];
+
+const PIPELINE_ORDER: ApplicationStatus[] = ["Draft","Submitted","UnderScrutiny","EDS","Referred","MoMGenerated","Finalized"];
+
+const LABEL_MAP: Record<string, string> = {
+  Draft: "Draft",
+  Submitted: "Submitted",
+  UnderScrutiny: "Scrutiny",
+  EDS: "EDS",
+  Referred: "Referred",
+  MoMGenerated: "MoM",
+  Finalized: "Finalized",
 };
 
 export default function AdminDashboardPage() {
@@ -50,12 +67,64 @@ export default function AdminDashboardPage() {
   }
 
   const totalApps = applications.length;
-  const activeApps = applications.filter(a => !['Finalized'].includes(a.status)).length;
+  const activeApps = applications.filter(a => !['Finalized','Draft'].includes(a.status)).length;
   const finalizedApps = applications.filter(a => a.status === 'Finalized').length;
   const pendingPayments = applications.filter(a => a.paymentStatus === 'pending').length;
   const totalUsers = users.length;
   const totalSectors = sectors.length;
   const totalTemplates = templates.length;
+
+  // ---- SLA Compliance Rate ----
+  const pipelineApps = applications.filter(a => SLA_DAYS[a.status]);
+  const slaOnTrackCount = pipelineApps.filter(a => getSLAInfo(a).status === 'on-track').length;
+  const slaComplianceRate = pipelineApps.length > 0
+    ? Math.round((slaOnTrackCount / pipelineApps.length) * 100)
+    : 100;
+
+  // ---- Pipeline bar chart ----
+  const chartData = PIPELINE_ORDER.map(status => ({
+    name: LABEL_MAP[status],
+    status,
+    count: applications.filter(a => a.status === status).length,
+  }));
+
+  // ---- Sector Distribution Pie ----
+  const sectorMap: Record<string, number> = {};
+  applications.forEach(a => {
+    sectorMap[a.industrySector] = (sectorMap[a.industrySector] || 0) + 1;
+  });
+  const sectorPieData = Object.entries(sectorMap)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
+  // ---- Monthly Trend Line (last 6 months) ----
+  const now = new Date();
+  const monthlyData = Array.from({ length: 6 }, (_, i) => {
+    const monthDate = subMonths(now, 5 - i);
+    const start = startOfMonth(monthDate);
+    const end = endOfMonth(monthDate);
+    const submitted = applications.filter(a => {
+      const d = new Date(a.createdAt);
+      return isAfter(d, start) && isBefore(d, end);
+    }).length;
+    const finalized = applications.filter(a => {
+      if (a.status !== 'Finalized') return false;
+      const d = new Date(a.updatedAt);
+      return isAfter(d, start) && isBefore(d, end);
+    }).length;
+    return { month: format(monthDate, 'MMM'), submitted, finalized };
+  });
+
+  // ---- Time in Current Stage BarChart (avg days) ----
+  const IN_PIPELINE: ApplicationStatus[] = ["Submitted","UnderScrutiny","EDS","Referred","MoMGenerated"];
+  const stageTimeData = IN_PIPELINE.map(status => {
+    const appsInStage = applications.filter(a => a.status === status);
+    if (appsInStage.length === 0) return { stage: LABEL_MAP[status], avgDays: 0 };
+    const totalDays = appsInStage.reduce((sum, a) => {
+      return sum + Math.floor((now.getTime() - new Date(a.updatedAt).getTime()) / (1000 * 60 * 60 * 24));
+    }, 0);
+    return { stage: LABEL_MAP[status], avgDays: Math.round(totalDays / appsInStage.length) };
+  });
 
   const stats = [
     {
@@ -65,6 +134,7 @@ export default function AdminDashboardPage() {
       color: "text-primary",
       borderColor: "border-l-primary",
       bgColor: "bg-primary/5",
+      suffix: "",
     },
     {
       title: "Active in Pipeline",
@@ -73,6 +143,7 @@ export default function AdminDashboardPage() {
       color: "text-amber-600 dark:text-amber-400",
       borderColor: "border-l-amber-500",
       bgColor: "bg-amber-500/5",
+      suffix: "",
     },
     {
       title: "Finalized EC",
@@ -81,14 +152,20 @@ export default function AdminDashboardPage() {
       color: "text-emerald-600 dark:text-emerald-400",
       borderColor: "border-l-emerald-500",
       bgColor: "bg-emerald-500/5",
+      suffix: "",
     },
     {
-      title: "Pending Payments",
-      value: pendingPayments,
+      title: "SLA Compliance",
+      value: slaComplianceRate,
       icon: Clock,
-      color: "text-rose-600 dark:text-rose-400",
-      borderColor: "border-l-rose-500",
-      bgColor: "bg-rose-500/5",
+      color: slaComplianceRate >= 75
+        ? "text-emerald-600 dark:text-emerald-400"
+        : slaComplianceRate >= 50
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-rose-600 dark:text-rose-400",
+      borderColor: slaComplianceRate >= 75 ? "border-l-emerald-500" : slaComplianceRate >= 50 ? "border-l-amber-500" : "border-l-rose-500",
+      bgColor: slaComplianceRate >= 75 ? "bg-emerald-500/5" : slaComplianceRate >= 50 ? "bg-amber-500/5" : "bg-rose-500/5",
+      suffix: "%",
     },
   ];
 
@@ -118,23 +195,6 @@ export default function AdminDashboardPage() {
       bg: "bg-emerald-50 dark:bg-emerald-500/10",
     },
   ];
-
-  // Build chart data in pipeline order
-  const PIPELINE_ORDER = ["Draft","Submitted","UnderScrutiny","EDS","Referred","MoMGenerated","Finalized"];
-  const LABEL_MAP: Record<string, string> = {
-    Draft: "Draft",
-    Submitted: "Submitted",
-    UnderScrutiny: "Scrutiny",
-    EDS: "EDS",
-    Referred: "Referred",
-    MoMGenerated: "MoM",
-    Finalized: "Finalized",
-  };
-  const chartData = PIPELINE_ORDER.map(status => ({
-    name: LABEL_MAP[status],
-    status,
-    count: applications.filter(a => a.status === status).length,
-  }));
 
   return (
     <div className="space-y-6">
@@ -167,7 +227,7 @@ export default function AdminDashboardPage() {
                   <div className="space-y-1.5">
                     <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{stat.title}</p>
                     <p className={cn("text-3xl font-bold tabular-nums", stat.color)}>
-                      <CountUp end={stat.value} />
+                      <CountUp end={stat.value} />{stat.suffix}
                     </p>
                   </div>
                   <div className={cn("p-3 rounded-xl", stat.bgColor, stat.color)}>
@@ -180,8 +240,8 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
+      {/* Row 1: Quick Actions + Pipeline bar chart */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Quick Links */}
         <AnimatedContainer animation="slide-up" delay={350}>
           <Card className="shadow-sm border-border/50 h-full">
             <CardHeader>
@@ -210,7 +270,6 @@ export default function AdminDashboardPage() {
           </Card>
         </AnimatedContainer>
 
-        {/* Pipeline Status Chart */}
         <AnimatedContainer animation="slide-up" delay={450}>
           <Card className="shadow-sm border-border/50 h-full">
             <CardHeader>
@@ -229,18 +288,8 @@ export default function AdminDashboardPage() {
               ) : (
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                    <XAxis
-                      dataKey="name"
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
-                    <YAxis
-                      allowDecimals={false}
-                      tick={{ fontSize: 10 }}
-                      axisLine={false}
-                      tickLine={false}
-                    />
+                    <XAxis dataKey="name" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
                     <Tooltip
                       cursor={{ fill: "rgba(0,0,0,0.04)" }}
                       contentStyle={{ fontSize: 12, borderRadius: 8 }}
@@ -248,10 +297,7 @@ export default function AdminDashboardPage() {
                     />
                     <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={36}>
                       {chartData.map((entry) => (
-                        <Cell
-                          key={entry.status}
-                          fill={STATUS_COLORS[entry.status] ?? "#94a3b8"}
-                        />
+                        <Cell key={entry.status} fill={STATUS_COLORS[entry.status] ?? "#94a3b8"} />
                       ))}
                     </Bar>
                   </BarChart>
@@ -268,7 +314,120 @@ export default function AdminDashboardPage() {
           </Card>
         </AnimatedContainer>
       </div>
+
+      {/* Row 2: Sector Pie + Monthly Trend */}
+      <div className="grid md:grid-cols-2 gap-6">
+        <AnimatedContainer animation="slide-up" delay={500}>
+          <Card className="shadow-sm border-border/50 h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <PieIcon className="h-5 w-5 text-primary" />
+                Sector Distribution
+              </CardTitle>
+              <CardDescription>Applications by industry sector</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {sectorPieData.length === 0 ? (
+                <div className="text-center py-8 text-muted-foreground">
+                  <PieIcon className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p className="text-sm">No data yet</p>
+                </div>
+              ) : (
+                <ResponsiveContainer width="100%" height={220}>
+                  <PieChart>
+                    <Pie
+                      data={sectorPieData}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={50}
+                      outerRadius={80}
+                      paddingAngle={2}
+                      dataKey="value"
+                      label={({ name, percent }) => `${name.length > 10 ? name.slice(0, 10) + '…' : name} ${(percent * 100).toFixed(0)}%`}
+                      labelLine={false}
+                    >
+                      {sectorPieData.map((_, idx) => (
+                        <Cell key={idx} fill={SECTOR_COLORS[idx % SECTOR_COLORS.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(value: number, name: string) => [value, name]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+              )}
+            </CardContent>
+          </Card>
+        </AnimatedContainer>
+
+        <AnimatedContainer animation="slide-up" delay={550}>
+          <Card className="shadow-sm border-border/50 h-full">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-5 w-5 text-primary" />
+                Monthly Trend
+              </CardTitle>
+              <CardDescription>Submitted vs Finalized — last 6 months</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={monthlyData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8 }} />
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Line type="monotone" dataKey="submitted" stroke="#60a5fa" strokeWidth={2} dot={{ r: 3 }} name="Submitted" />
+                  <Line type="monotone" dataKey="finalized" stroke="#34d399" strokeWidth={2} dot={{ r: 3 }} name="Finalized" />
+                </LineChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        </AnimatedContainer>
+      </div>
+
+      {/* Row 3: Stage Bottleneck BarChart */}
+      <AnimatedContainer animation="slide-up" delay={600}>
+        <Card className="shadow-sm border-border/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Clock className="h-5 w-5 text-primary" />
+              Stage Bottleneck Analysis
+            </CardTitle>
+            <CardDescription>Average days applications have been in each active stage (identifies delays)</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {activeApps === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                <Clock className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No active applications in pipeline</p>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={stageTimeData} layout="vertical" margin={{ top: 4, right: 24, left: 10, bottom: 0 }}>
+                  <XAxis type="number" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} unit="d" />
+                  <YAxis type="category" dataKey="stage" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} width={64} />
+                  <Tooltip
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                    formatter={(v: number) => [`${v} days`, "Avg time"]}
+                  />
+                  <Bar dataKey="avgDays" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                    {stageTimeData.map((entry, idx) => {
+                      const slaLimit = SLA_DAYS[Object.keys(LABEL_MAP).find(k => LABEL_MAP[k] === entry.stage) as ApplicationStatus ?? ""] ?? Infinity;
+                      const color = entry.avgDays > slaLimit ? "#fb7185" : entry.avgDays > slaLimit * 0.75 ? "#fbbf24" : "#34d399";
+                      return <Cell key={idx} fill={color} />;
+                    })}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+            <p className="text-xs text-muted-foreground mt-2">
+              Green = within SLA &nbsp;·&nbsp; Amber = nearing limit &nbsp;·&nbsp; Red = SLA breached
+            </p>
+          </CardContent>
+        </Card>
+      </AnimatedContainer>
     </div>
   );
 }
-

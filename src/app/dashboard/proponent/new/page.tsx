@@ -12,7 +12,7 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Category, CG_DISTRICTS } from "@/lib/types";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MapPin, Layers, Navigation, Fingerprint } from "lucide-react";
+import { ArrowLeft, ArrowRight, CheckCircle2, FileText, MapPin, Layers, Navigation, Fingerprint, ChevronDown, ChevronUp, ClipboardList } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
@@ -21,6 +21,7 @@ import { AadhaarEKYC } from "@/components/AadhaarEKYC";
 import dynamic from "next/dynamic";
 import { checkProximity } from "@/lib/gis-data";
 import { DashboardSkeleton } from "@/components/ui/page-skeleton";
+import { getRequiredDocuments } from "@/lib/document-requirements";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), {
   ssr: false,
@@ -59,6 +60,7 @@ export default function NewApplicationPage() {
   });
   const [ekycVerified, setEkycVerified] = useState(false);
   const [ekycIdentity, setEkycIdentity] = useState<{ name: string; maskedAadhaar: string } | null>(null);
+  const [checklistOpen, setChecklistOpen] = useState(true);
 
   // Proximity analysis for the selected coordinates
   const proximityResults = useMemo(() => {
@@ -310,6 +312,61 @@ export default function NewApplicationPage() {
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                   />
                 </div>
+
+                {/* Document Checklist — shown once sector + category selected */}
+                {formData.industrySector && formData.category && (() => {
+                  const reqs = getRequiredDocuments(formData.industrySector, formData.category);
+                  return (
+                    <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                      <button
+                        type="button"
+                        className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 transition-colors"
+                        onClick={() => setChecklistOpen(o => !o)}
+                      >
+                        <span className="flex items-center gap-2">
+                          <ClipboardList className="h-4 w-4" />
+                          Document Checklist — {formData.industrySector}, Category {formData.category}
+                        </span>
+                        {checklistOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                      </button>
+                      {checklistOpen && (
+                        <div className="px-4 pb-4 space-y-3 text-sm">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400 mb-2">
+                              Mandatory Documents ({reqs.mandatory.length})
+                            </p>
+                            <ul className="space-y-1.5">
+                              {reqs.mandatory.map((doc, i) => (
+                                <li key={i} className="flex items-start gap-2 text-foreground/80">
+                                  <span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />
+                                  {doc}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                          {reqs.recommended.length > 0 && (
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                                Recommended Documents ({reqs.recommended.length})
+                              </p>
+                              <ul className="space-y-1.5">
+                                {reqs.recommended.map((doc, i) => (
+                                  <li key={i} className="flex items-start gap-2 text-muted-foreground">
+                                    <span className="mt-1 h-1.5 w-1.5 rounded-full bg-border shrink-0" />
+                                    {doc}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <p className="text-xs text-muted-foreground pt-1 border-t border-amber-500/20">
+                            Gather these documents before uploading in the application detail page.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             )}
 
