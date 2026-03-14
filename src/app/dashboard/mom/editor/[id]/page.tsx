@@ -44,6 +44,16 @@ export default function MoMEditorPage() {
   const [momHash, setMomHash] = useState<string>("");
   const [signed, setSigned] = useState(false);
 
+  // If the page loads with existing minutes (e.g. a pre-seeded MoMGenerated app),
+  // compute the hash so the eSign component can appear without re-running the AI.
+  useEffect(() => {
+    if (existingMinutes && !momHash) {
+      const momText = `${existingMinutes.discussionSummary}\n${existingMinutes.committeeDecision}\n${existingMinutes.conditions.join('\n')}`;
+      hashString(momText).then(setMomHash);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [existingMinutes?.applicationId]);
+
   // Gist templates (type === 'gist') for the template picker
   const gistTemplates = templates.filter(t => t.type === 'gist');
 
