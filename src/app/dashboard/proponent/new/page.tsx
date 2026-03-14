@@ -20,6 +20,7 @@ import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { AadhaarEKYC } from "@/components/AadhaarEKYC";
 import dynamic from "next/dynamic";
 import { checkProximity } from "@/lib/gis-data";
+import { DashboardSkeleton } from "@/components/ui/page-skeleton";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), {
   ssr: false,
@@ -42,7 +43,7 @@ const STEPS = [
 ];
 
 export default function NewApplicationPage() {
-  const { addApplication, sectors, currentUser } = useAppStore();
+  const { addApplication, sectors, currentUser, hydrated } = useAppStore();
   const { toast } = useToast();
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -70,20 +71,23 @@ export default function NewApplicationPage() {
     return proximityResults.filter(p => p.riskLevel === "critical" || p.riskLevel === "high").length;
   }, [proximityResults]);
 
+  // Early return AFTER all hooks (React Rules of Hooks)
+  if (!hydrated || !currentUser) return <DashboardSkeleton />;
+
   const canProceed = () => {
     if (step === 0) {
       // eKYC step — must be verified or skipped
       return ekycVerified;
     }
     if (step === 1) {
-      return formData.projectName && formData.industrySector && formData.location && formData.district;
+      return formData.projectName.trim() && formData.industrySector && formData.location.trim() && formData.district;
     }
     if (step === 2) {
       // Map step — coordinates recommended but not strictly required
       return true;
     }
     if (step === 3) {
-      return formData.description.length > 10;
+      return formData.description.trim().length > 10;
     }
     return true;
   };
@@ -91,24 +95,33 @@ export default function NewApplicationPage() {
   const handleSubmit = async () => {
     if (!currentUser) return;
 
-    const app = await addApplication({
-      ...formData,
-      applicantId: currentUser.id,
-      coordinates: formData.coordinates ?? undefined,
-      // Persist eKYC identity with the application
-      ...(ekycIdentity && {
-        ekycName: ekycIdentity.name,
-        ekycMaskedAadhaar: ekycIdentity.maskedAadhaar,
-        ekycVerifiedAt: new Date().toISOString(),
-      }),
-    });
+    try {
+      const app = await addApplication({
+        ...formData,
+        applicantId: currentUser.id,
+        coordinates: formData.coordinates ?? undefined,
+        // Persist eKYC identity with the application
+        ...(ekycIdentity && {
+          ekycName: ekycIdentity.name,
+          ekycMaskedAadhaar: ekycIdentity.maskedAadhaar,
+          ekycVerifiedAt: new Date().toISOString(),
+        }),
+      });
 
-    toast({
-      title: "Success",
-      description: "Application drafted successfully. You can now upload documents and submit.",
-    });
+      toast({
+        title: "Success",
+        description: "Application drafted successfully. You can now upload documents and submit.",
+      });
 
-    router.push(`/dashboard/applications/${app.id}`);
+      router.push(`/dashboard/applications/${app.id}`);
+    } catch (error) {
+      console.error("Failed to create application:", error);
+      toast({
+        title: "Error",
+        description: "Failed to create application. Please try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

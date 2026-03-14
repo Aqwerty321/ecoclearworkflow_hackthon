@@ -15,9 +15,11 @@ import { useToast } from "@/hooks/use-toast";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import { TableSkeleton } from "@/components/ui/page-skeleton";
+import Link from "next/link";
 
 export default function SectorManagementPage() {
-  const { sectors, currentUser, addSector, updateSector, deleteSector } = useAppStore();
+  const { sectors, currentUser, addSector, updateSector, deleteSector, hydrated } = useAppStore();
   const { toast } = useToast();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -26,7 +28,13 @@ export default function SectorManagementPage() {
   const [description, setDescription] = useState("");
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
-  if (currentUser?.role !== 'Admin') return <div className="p-8 text-center text-muted-foreground">Unauthorized</div>;
+  if (!hydrated) return <TableSkeleton />;
+  if (currentUser?.role !== 'Admin') return (
+    <div className="p-8 text-center text-muted-foreground space-y-3">
+      <p>You do not have permission to access this page.</p>
+      <Button variant="outline" size="sm" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+    </div>
+  );
 
   const openAdd = () => {
     setEditingSector(null);

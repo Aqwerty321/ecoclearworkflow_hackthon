@@ -27,7 +27,12 @@ export default function ScrutinyPoolPage() {
   if (!hydrated) return <TableSkeleton />;
 
   if (currentUser?.role !== 'Scrutiny Team' && currentUser?.role !== 'Admin') {
-    return <div className="p-8 text-center text-muted-foreground">Unauthorized Access</div>;
+    return (
+      <div className="p-8 text-center text-muted-foreground space-y-3">
+        <p>You do not have permission to access the Scrutiny Pool.</p>
+        <Button variant="outline" size="sm" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+      </div>
+    );
   }
 
   // Apply ABAC filtering — users only see applications matching their sector/district assignments

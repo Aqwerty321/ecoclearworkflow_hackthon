@@ -184,7 +184,7 @@ export default function MyApplicationsPage() {
                             ? "bg-green-50 text-green-700 border-green-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30"
                             : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30"
                         )}>
-                          {app.paymentStatus.toUpperCase()}
+                          {(app.paymentStatus ?? 'pending').toUpperCase()}
                         </span>
                       </TableCell>
                       <TableCell className="text-xs text-muted-foreground">

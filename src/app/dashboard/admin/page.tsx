@@ -21,7 +21,12 @@ export default function AdminDashboardPage() {
 
   if (!hydrated) return <DashboardSkeleton />;
   if (currentUser?.role !== 'Admin') {
-    return <div className="p-8 text-center text-muted-foreground">Unauthorized</div>;
+    return (
+      <div className="p-8 text-center text-muted-foreground space-y-3">
+        <p>You do not have permission to access the Admin panel.</p>
+        <Button variant="outline" size="sm" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+      </div>
+    );
   }
 
   const totalApps = applications.length;
@@ -213,7 +218,7 @@ export default function AdminDashboardPage() {
               )}
               <div className="mt-4 pt-4 border-t border-border/50">
                 <Button variant="outline" size="sm" asChild className="w-full gap-2">
-                  <Link href="/dashboard/my-applications">
+                  <Link href="/dashboard/applications">
                     View All Applications <ArrowRight className="h-3.5 w-3.5" />
                   </Link>
                 </Button>

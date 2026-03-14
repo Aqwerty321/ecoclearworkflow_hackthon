@@ -17,6 +17,8 @@ import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { GradientText } from "@/components/ui/gradient-text";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
+import { TableSkeleton } from "@/components/ui/page-skeleton";
+import Link from "next/link";
 
 const roleColors: Record<string, string> = {
   Admin: "bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30",
@@ -26,7 +28,7 @@ const roleColors: Record<string, string> = {
 };
 
 export default function AdminUsersPage() {
-  const { users, currentUser, updateUserRole, addUser } = useAppStore();
+  const { users, currentUser, updateUserRole, addUser, hydrated } = useAppStore();
   const { toast } = useToast();
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -34,7 +36,13 @@ export default function AdminUsersPage() {
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState<UserRole>("Project Proponent");
 
-  if (currentUser?.role !== 'Admin') return <div className="p-8 text-center text-muted-foreground">Unauthorized</div>;
+  if (!hydrated) return <TableSkeleton />;
+  if (currentUser?.role !== 'Admin') return (
+    <div className="p-8 text-center text-muted-foreground space-y-3">
+      <p>You do not have permission to access this page.</p>
+      <Button variant="outline" size="sm" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+    </div>
+  );
 
   const handleRoleChange = (userId: string, role: UserRole) => {
     updateUserRole(userId, role);

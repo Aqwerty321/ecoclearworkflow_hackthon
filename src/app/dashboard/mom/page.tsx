@@ -31,7 +31,12 @@ export default function MeetingDeskPage() {
   if (!hydrated) return <TableSkeleton />;
 
   if (currentUser?.role !== 'MoM Team' && currentUser?.role !== 'Admin') {
-    return <div className="p-8 text-center text-muted-foreground">Unauthorized Access</div>;
+    return (
+      <div className="p-8 text-center text-muted-foreground space-y-3">
+        <p>You do not have permission to access the Meeting Desk.</p>
+        <Button variant="outline" size="sm" asChild><Link href="/dashboard">Back to Dashboard</Link></Button>
+      </div>
+    );
   }
 
   // Apply ABAC filtering — users only see applications matching their sector/district assignments
@@ -53,15 +58,24 @@ export default function MeetingDeskPage() {
 
   const handleSchedule = () => {
     if (!schedulingAppId || !meetingDate) return;
-    const iso = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
-    updateApplication(schedulingAppId, { scheduledMeetingAt: iso });
-    toast({
-      title: "Meeting Scheduled",
-      description: `Committee meeting set for ${new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`,
-    });
-    setSchedulingAppId(null);
-    setMeetingDate("");
-    setMeetingTime("10:00");
+    try {
+      const iso = new Date(`${meetingDate}T${meetingTime}:00`).toISOString();
+      updateApplication(schedulingAppId, { scheduledMeetingAt: iso });
+      toast({
+        title: "Meeting Scheduled",
+        description: `Committee meeting set for ${new Date(iso).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`,
+      });
+      setSchedulingAppId(null);
+      setMeetingDate("");
+      setMeetingTime("10:00");
+    } catch (error) {
+      console.error("Failed to schedule meeting:", error);
+      toast({
+        title: "Error",
+        description: "Invalid date or time. Please check and try again.",
+        variant: "destructive",
+      });
+    }
   };
 
   return (

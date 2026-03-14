@@ -160,8 +160,13 @@ export default function DashboardPage() {
                 <CardDescription>Track the progress of environmental clearances</CardDescription>
               </div>
               <Button variant="outline" size="sm" asChild className="gap-1">
-                <Link href={currentUser.role === 'Scrutiny Team' ? "/dashboard/scrutiny" : "/dashboard/my-applications"}>
-                  View All <ArrowRight className="h-3.5 w-3.5" />
+                <Link href={
+                    isScrutiny ? "/dashboard/scrutiny" :
+                    isMoM ? "/dashboard/mom" :
+                    isAdmin ? "/dashboard/applications" :
+                    "/dashboard/my-applications"
+                  }>
+                   View All <ArrowRight className="h-3.5 w-3.5" />
                 </Link>
               </Button>
             </div>
@@ -206,7 +211,7 @@ export default function DashboardPage() {
                               ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30" 
                               : "bg-red-50 text-red-700 border-red-200 dark:bg-red-500/10 dark:text-red-400 dark:border-red-500/30"
                           )}>
-                            {app.paymentStatus.toUpperCase()}
+                            {(app.paymentStatus ?? 'pending').toUpperCase()}
                           </span>
                         </TableCell>
                         <TableCell className="text-right">
