@@ -27,6 +27,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { cn } from "@/lib/utils";
 import { AnimatedContainer } from "@/components/ui/animated-container";
 import { DetailSkeleton } from "@/components/ui/page-skeleton";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import dynamic from "next/dynamic";
 
 const MapPicker = dynamic(() => import("@/components/MapPicker"), {
@@ -741,7 +742,7 @@ export default function ApplicationDetailPage() {
                 <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
                   <div className="p-4 bg-card rounded-xl border">
                     <h3 className="font-bold text-primary mb-2">Analysis Summary</h3>
-                    <p className="text-sm text-foreground/80">{analysisResult.summary}</p>
+                    <MarkdownContent className="text-sm">{analysisResult.summary}</MarkdownContent>
                   </div>
                   
                   <div className="grid md:grid-cols-2 gap-4">
@@ -896,8 +897,7 @@ export default function ApplicationDetailPage() {
                               </div>
                             </div>
                             <p className="text-foreground/70">{f.details}</p>
-                            <p className="text-xs text-primary/80 mt-1 italic">{f.recommendation}</p>
-                          </div>
+                            <p className="text-xs text-primary/80 mt-1 italic">{f.recommendation}</p>                          </div>
                         ))}
                       </div>
                     </div>
@@ -921,7 +921,7 @@ export default function ApplicationDetailPage() {
                   {complianceResult.environmentalRiskSummary && (
                     <div className="p-4 bg-card rounded-xl border border-indigo-200 dark:border-indigo-500/30">
                       <h3 className="font-bold text-indigo-700 dark:text-indigo-400 mb-2">Environmental Risk Summary</h3>
-                      <p className="text-sm text-foreground/80">{complianceResult.environmentalRiskSummary}</p>
+                      <MarkdownContent className="text-sm">{complianceResult.environmentalRiskSummary}</MarkdownContent>
                     </div>
                   )}
 
@@ -931,7 +931,7 @@ export default function ApplicationDetailPage() {
                       <h3 className="font-bold text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-2">
                         <Send className="h-4 w-4" /> Recommended EDS Communication
                       </h3>
-                      <p className="text-sm text-foreground/80 whitespace-pre-wrap">{complianceResult.edsRecommendation}</p>
+                      <MarkdownContent className="text-sm">{complianceResult.edsRecommendation}</MarkdownContent>
                     </div>
                   )}
 
@@ -956,7 +956,7 @@ export default function ApplicationDetailPage() {
                           </div>
                           <div className="p-3 bg-muted/40 rounded-lg border text-sm">
                             <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Letter Body</p>
-                            <p className="whitespace-pre-wrap text-foreground/80 text-xs leading-relaxed">{edsDraftResult.body}</p>
+                            <MarkdownContent className="text-xs">{edsDraftResult.body}</MarkdownContent>
                           </div>
                           {edsDraftResult.attachmentChecklist.length > 0 && (
                             <div className="p-3 bg-muted/40 rounded-lg border text-sm">

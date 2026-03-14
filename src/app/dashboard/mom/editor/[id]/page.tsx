@@ -12,6 +12,7 @@ import { DetailSkeleton } from "@/components/ui/page-skeleton";
 import { ShimmerButton } from "@/components/ui/shimmer-button";
 import { CollaborativeEditor } from "@/components/CollaborativeEditor";
 import { ESignDocument } from "@/components/ESignDocument";
+import { MarkdownContent } from "@/components/MarkdownContent";
 import { useParams, useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 import { useState, useEffect, useCallback } from "react";
@@ -328,21 +329,25 @@ export default function MoMEditorPage() {
               </CardHeader>
               <CardContent className="pt-6 space-y-6">
                 <div>
-                  <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Discussion Summary</h4>
-                  <p className="mt-1 text-sm text-foreground/80">{finalMoM.discussionSummary}</p>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Committee Decision</h4>
-                  <p className="mt-1 text-sm font-bold text-emerald-900 dark:text-emerald-300 bg-emerald-100/50 dark:bg-emerald-500/10 p-2 rounded">{finalMoM.committeeDecision}</p>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Conditions</h4>
-                  <ul className="mt-2 space-y-2">
-                    {finalMoM.conditions.map((c: string, i: number) => (
-                      <li key={i} className="text-sm bg-muted/30 p-2 rounded border-l-4 border-emerald-400 dark:border-emerald-500">{c}</li>
-                    ))}
-                  </ul>
-                </div>
+                   <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Discussion Summary</h4>
+                   <MarkdownContent className="mt-1 text-sm">{finalMoM.discussionSummary}</MarkdownContent>
+                 </div>
+                 <div>
+                   <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Committee Decision</h4>
+                   <div className="mt-1 text-sm font-bold text-emerald-900 dark:text-emerald-300 bg-emerald-100/50 dark:bg-emerald-500/10 p-2 rounded">
+                     <MarkdownContent>{finalMoM.committeeDecision}</MarkdownContent>
+                   </div>
+                 </div>
+                 <div>
+                   <h4 className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wide">Conditions</h4>
+                   <ul className="mt-2 space-y-2">
+                     {finalMoM.conditions.map((c: string, i: number) => (
+                       <li key={i} className="text-sm bg-muted/30 p-2 rounded border-l-4 border-emerald-400 dark:border-emerald-500">
+                         <MarkdownContent className="text-sm">{`${i + 1}. ${c}`}</MarkdownContent>
+                       </li>
+                     ))}
+                   </ul>
+                 </div>
               </CardContent>
               <CardFooter className="flex flex-col gap-3 border-t border-border/50 p-4">
                 {/* eSign — Digital Signature before finalization */}
