@@ -4,10 +4,5 @@
   "buildCommand": "npm run build",
   "installCommand": "npm install --legacy-peer-deps",
   "devCommand": "npm run dev",
-  "regions": ["bom1"],
-  "env": {
-    "GOOGLE_GENAI_API_KEY": "@google_genai_api_key",
-    "AI_AGENT_SERVICE_URL": "@ai_agent_service_url",
-    "GIS_SERVICE_URL": "@gis_service_url"
-  }
+  "regions": ["bom1"]
 }
