@@ -23,7 +23,7 @@ export function ShimmerButton({
       )}
       {...props}
     >
-      <span className="relative z-10">{children}</span>
+      <span className="relative z-10 inline-flex items-center justify-center gap-2">{children}</span>
       <span
         className="absolute inset-0 z-0 opacity-0 hover:opacity-100 transition-opacity duration-300"
         style={{

@@ -2,7 +2,8 @@ import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
-  output: 'standalone',
+  // standalone only for Docker builds; Vercel manages its own output format
+  output: process.env.VERCEL ? undefined : 'standalone',
   typescript: {
     ignoreBuildErrors: true,
   },
@@ -26,6 +27,12 @@ const nextConfig: NextConfig = {
       {
         protocol: 'https',
         hostname: 'picsum.photos',
+        port: '',
+        pathname: '/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'firebasestorage.googleapis.com',
         port: '',
         pathname: '/**',
       },
