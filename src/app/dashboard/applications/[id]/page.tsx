@@ -218,13 +218,15 @@ export default function ApplicationDetailPage() {
 
       const res = await scrutinyDocumentSummaryAndFlagging({
         projectDescription: application.description,
+        industrySector: application.industrySector,
+        category: application.category as 'A' | 'B1' | 'B2',
         documentUrls,
       });
       setAnalysisResult(res);
       // Persist potential impacts as riskSummary for MoM draft enrichment
       if (res.potentialImpacts?.length) {
         updateApplication(application.id, {
-          riskSummary: res.potentialImpacts.join('; '),
+          riskSummary: res.potentialImpacts.map((p: { issue: string }) => p.issue).join('; '),
         });
       }
     } catch (err) {
@@ -241,7 +243,7 @@ export default function ApplicationDetailPage() {
       const res = await regulatoryComplianceCheck({
         projectName: application.projectName,
         industrySector: application.industrySector,
-        category: application.category,
+        category: application.category as 'A' | 'B1' | 'B2',
         projectDescription: application.description,
         location: application.location,
         district: application.district,
@@ -270,13 +272,14 @@ export default function ApplicationDetailPage() {
         ? complianceResult.sectorSpecificFindings
             .filter(f => f.status !== 'compliant')
             .map(f => `${f.parameter}: ${f.details}`)
-        : analysisResult?.complianceIssues ?? [];
+        : (analysisResult?.complianceFindings ?? []).map((f: { issue: string; regulation: string }) => `${f.issue} (${f.regulation})`);
       const missingDocuments = complianceResult?.missingDocuments ?? [];
       const res = await generateEDSDraft({
         projectName: application.projectName,
+        applicationId: application.id,
         applicantName: application.ekycName ?? 'Project Proponent',
         industrySector: application.industrySector,
-        category: application.category,
+        category: application.category as 'A' | 'B1' | 'B2',
         deficiencies,
         missingDocuments,
       });
@@ -316,8 +319,12 @@ export default function ApplicationDetailPage() {
       const gistText = await generateMeetingGist({
         projectName: application.projectName,
         industrySector: application.industrySector,
-        category: application.category,
-        projectDescription: application.description
+        category: application.category as 'A' | 'B1' | 'B2',
+        projectDescription: application.description,
+        location: application.location,
+        environmentalRiskSummary: application.riskSummary,
+        complianceScore: complianceResult?.overallScore,
+        riskLevel: complianceResult?.riskLevel,
       });
       upsertGist({ applicationId: application.id, generatedText: gistText, editedText: gistText });
     } catch {
@@ -748,11 +755,20 @@ export default function ApplicationDetailPage() {
                   <div className="grid md:grid-cols-2 gap-4">
                     <div className="p-4 bg-card rounded-xl border border-rose-200 dark:border-rose-500/30">
                       <h3 className="font-bold text-rose-700 dark:text-rose-400 mb-2 flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4" /> Compliance Issues
+                        <AlertTriangle className="h-4 w-4" /> Compliance Findings
                       </h3>
-                      <ul className="list-disc pl-5 space-y-1">
-                        {analysisResult.complianceIssues.map((issue: string, i: number) => (
-                          <li key={i} className="text-sm text-foreground/80">{issue}</li>
+                      <ul className="space-y-2">
+                        {analysisResult.complianceFindings.map((f: { issue: string; severity: string; regulation: string; recommendation: string }, i: number) => (
+                          <li key={i} className="text-sm">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold mr-1.5 ${
+                              f.severity === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              : f.severity === 'major' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                              : f.severity === 'minor' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                            }`}>{f.severity}</span>
+                            <span className="text-foreground/80">{f.issue}</span>
+                            <p className="text-xs text-muted-foreground mt-0.5 ml-0.5">{f.regulation}</p>
+                          </li>
                         ))}
                       </ul>
                     </div>
@@ -760,44 +776,53 @@ export default function ApplicationDetailPage() {
                       <h3 className="font-bold text-indigo-700 dark:text-indigo-400 mb-2 flex items-center gap-2">
                         <FileCheck className="h-4 w-4" /> Potential Impacts
                       </h3>
-                      <ul className="list-disc pl-5 space-y-1">
-                        {analysisResult.potentialImpacts.map((impact: string, i: number) => (
-                          <li key={i} className="text-sm text-foreground/80">{impact}</li>
+                      <ul className="space-y-2">
+                        {analysisResult.potentialImpacts.map((p: { issue: string; severity: string; recommendation: string }, i: number) => (
+                          <li key={i} className="text-sm">
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold mr-1.5 ${
+                              p.severity === 'critical' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400'
+                              : p.severity === 'major' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400'
+                              : p.severity === 'minor' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400'
+                            }`}>{p.severity}</span>
+                            <span className="text-foreground/80">{p.issue}</span>
+                            <p className="text-xs text-muted-foreground mt-0.5 ml-0.5 italic">{p.recommendation}</p>
+                          </li>
                         ))}
                       </ul>
                     </div>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setAnalysisResult(null)}>Clear Analysis</Button>
 
-                  {/* AI Recommendation card — derived from compliance issues count */}
+                  {/* AI Recommendation card — derived from overall assessment + compliance findings count */}
                   <div className={`p-4 rounded-xl border flex items-start gap-3 ${
-                    analysisResult.complianceIssues.length === 0
+                    analysisResult.overallAssessment === 'adequate'
                       ? "bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30"
-                      : analysisResult.complianceIssues.length <= 2
+                      : analysisResult.overallAssessment === 'needs_revision'
                       ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
                       : "bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30"
                   }`}>
                     <div className="mt-0.5">
-                      {analysisResult.complianceIssues.length === 0
+                      {analysisResult.overallAssessment === 'adequate'
                         ? <FileCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
                         : <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
                     </div>
                     <div>
                       <p className={`font-bold text-sm ${
-                        analysisResult.complianceIssues.length === 0
+                        analysisResult.overallAssessment === 'adequate'
                           ? "text-green-700 dark:text-green-400"
-                          : analysisResult.complianceIssues.length <= 2
+                          : analysisResult.overallAssessment === 'needs_revision'
                           ? "text-amber-700 dark:text-amber-400"
                           : "text-rose-700 dark:text-rose-400"
                       }`}>
                         AI Recommendation
                       </p>
                       <p className="text-sm text-foreground/80 mt-0.5">
-                        {analysisResult.complianceIssues.length === 0
+                        {analysisResult.overallAssessment === 'adequate'
                           ? "Application appears compliant. No major issues detected — suitable for direct EC grant."
-                          : analysisResult.complianceIssues.length <= 2
-                          ? `${analysisResult.complianceIssues.length} minor compliance issue(s) identified. Consider requesting clarifications from the proponent before proceeding.`
-                          : `${analysisResult.complianceIssues.length} compliance issues detected. Recommend issuing an Environmental Data Sheet (EDS) for detailed assessment.`}
+                          : analysisResult.overallAssessment === 'needs_revision'
+                          ? `${analysisResult.complianceFindings?.length ?? 0} finding(s) identified. Consider requesting clarifications from the proponent before proceeding.`
+                          : `${analysisResult.complianceFindings?.length ?? 0} compliance issues detected. Recommend issuing an Environmental Data Sheet (EDS) for detailed assessment.`}
                       </p>
                     </div>
                   </div>

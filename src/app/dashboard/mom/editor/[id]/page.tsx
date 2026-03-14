@@ -94,7 +94,7 @@ export default function MoMEditorPage() {
         editedGist,
         projectName: application.projectName,
         industrySector: application.industrySector,
-        category: application.category,
+        category: application.category as 'A' | 'B1' | 'B2',
         location: application.location,
         environmentalRiskSummary: application.riskSummary,
       });
