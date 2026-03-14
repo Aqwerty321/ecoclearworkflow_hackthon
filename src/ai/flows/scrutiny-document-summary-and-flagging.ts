@@ -59,13 +59,19 @@ Based on the project description and the content of the documents, perform the f
 
 Ensure your output strictly adheres to the JSON schema provided.`,
       },
-      ...documentUrls.map((url) => ({
-        media: { url: url }, // Genkit infers contentType from the data URI.
-      })),
+      ...documentUrls.map((url) => {
+        // text/plain data URIs must be passed as text parts, not media parts —
+        // Gemini media parts are for binary content (images, PDFs).
+        if (url.startsWith('data:text/plain;base64,')) {
+          const decoded = Buffer.from(url.replace('data:text/plain;base64,', ''), 'base64').toString('utf-8');
+          return { text: `\n\nDocument content:\n${decoded}` };
+        }
+        return { media: { url: url } };
+      }),
     ];
 
     const { output } = await ai.generate({
-      model: 'googleai/gemini-1.5-flash', // Using a multimodal model that can handle text and document content.
+      model: 'googleai/gemini-2.5-flash', // Must match the model registered in genkit.ts
       prompt: promptParts,
       output: {
         schema: ScrutinyDocumentSummaryAndFlaggingOutputSchema,

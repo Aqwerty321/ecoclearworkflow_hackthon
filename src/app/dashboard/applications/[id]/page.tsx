@@ -196,19 +196,19 @@ export default function ApplicationDetailPage() {
         .filter(d => d.fileUrl && !d.fileUrl.startsWith('#'))
         .map(d => d.fileUrl);
 
+      const syntheticText =
+        `Project: ${application.projectName}\n` +
+        `Sector: ${application.industrySector}\n` +
+        `Category: ${application.category}\n` +
+        `Location: ${application.location || 'Not specified'}\n` +
+        `Description: ${application.description}\n\n` +
+        `Submitted Documents (${appDocs.length}):\n` +
+        appDocs.map((d, i) => `${i + 1}. ${d.name} (${d.type})`).join('\n');
+
+      // btoa() only handles Latin-1; use encodeURIComponent for UTF-8 safety
       const documentUrls = realUrls.length > 0
         ? realUrls
-        : [
-            `data:text/plain;base64,${btoa(
-              `Project: ${application.projectName}\n` +
-              `Sector: ${application.industrySector}\n` +
-              `Category: ${application.category}\n` +
-              `Location: ${application.location || 'Not specified'}\n` +
-              `Description: ${application.description}\n\n` +
-              `Submitted Documents (${appDocs.length}):\n` +
-              appDocs.map((d, i) => `${i + 1}. ${d.name} (${d.type})`).join('\n')
-            )}`
-          ];
+        : [`data:text/plain;base64,${btoa(unescape(encodeURIComponent(syntheticText)))}`];
 
       const res = await scrutinyDocumentSummaryAndFlagging({
         projectDescription: application.description,
@@ -221,7 +221,8 @@ export default function ApplicationDetailPage() {
           riskSummary: res.potentialImpacts.join('; '),
         });
       }
-    } catch {
+    } catch (err) {
+      console.error('[scrutiny] AI analysis failed:', err);
       toast({ variant: "destructive", title: "AI Error", description: "Failed to run AI analysis." });
     } finally {
       setAnalyzing(false);
