@@ -15,13 +15,17 @@ export function ShimmerButton({
   shimmerColor = "rgba(255,255,255,0.2)",
   ...props
 }: ShimmerButtonProps) {
+  // Never forward asChild — the shimmer <span> overlay would break Radix Slot
+  // (Slot requires exactly one child). If the caller wants a link-style button,
+  // use a plain <Button asChild> directly instead of ShimmerButton.
+  const { asChild: _asChild, ...safeProps } = props as typeof props & { asChild?: boolean };
   return (
     <Button
       className={cn(
         "relative overflow-hidden",
         className
       )}
-      {...props}
+      {...safeProps}
     >
       <span className="relative z-10 inline-flex items-center justify-center gap-2">{children}</span>
       <span

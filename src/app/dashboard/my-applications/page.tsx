@@ -78,11 +78,9 @@ export default function MyApplicationsPage() {
             </h1>
             <p className="text-muted-foreground">Manage your environmental clearance submissions</p>
           </div>
-          <ShimmerButton asChild className="font-bold gap-2">
-            <Link href="/dashboard/proponent/new">
-              <Plus className="h-4 w-4" />
-              New Application
-            </Link>
+          <ShimmerButton className="font-bold gap-2" onClick={() => { window.location.href = "/dashboard/proponent/new"; }}>
+            <Plus className="h-4 w-4" />
+            New Application
           </ShimmerButton>
         </div>
       </AnimatedContainer>
