@@ -70,6 +70,7 @@ DISC_LOG=$(mktemp /tmp/cloudflared-disc-XXXXXX.log)
 echo "[tunnel] Starting Hocuspocus tunnel (port 8003)..."
 cloudflared tunnel --url http://localhost:8003 \
   --no-autoupdate \
+  --protocol http2 \
   2>&1 | tee "$HOCUS_LOG" &
 HOCUS_PID=$!
 
@@ -77,6 +78,7 @@ HOCUS_PID=$!
 echo "[tunnel] Starting Discovery tunnel (port 4000)..."
 cloudflared tunnel --url http://localhost:4000 \
   --no-autoupdate \
+  --protocol http2 \
   2>&1 | tee "$DISC_LOG" &
 DISC_PID=$!
 
