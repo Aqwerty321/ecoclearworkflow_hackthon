@@ -370,7 +370,7 @@ export default function MoMEditorPage() {
                 )}
                 <div className="flex gap-2 w-full">
                   {!isLocked && (
-                    <ShimmerButton className="flex-1 font-bold" onClick={finalizeMoM} disabled={!signed && !!momHash}>
+                    <ShimmerButton className="flex-1 font-bold" onClick={finalizeMoM} disabled={!signed || !momHash}>
                       {!signed && momHash ? "Sign before finalizing" : "Finalize & Approve EC"}
                     </ShimmerButton>
                   )}

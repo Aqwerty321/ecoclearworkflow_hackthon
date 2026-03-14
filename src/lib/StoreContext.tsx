@@ -41,10 +41,10 @@ const INITIAL_SECTORS: Sector[] = [
 
 // Kept in sync with scripts/seed-firestore.mjs SEED_USERS (offline/demo fallback only)
 const INITIAL_USERS: User[] = [
-  { id: 'admin-1',    name: 'Admin CECB',    email: 'admin@ecoclear.gov', role: 'Admin',             assignedState: 'Chhattisgarh', createdAt: new Date().toISOString() },
-  { id: 'proponent-1', name: 'John Builder', email: 'john@builder.com',   role: 'Project Proponent', assignedState: 'Chhattisgarh', createdAt: new Date().toISOString() },
-  { id: 'scrutiny-1', name: 'Sarah EDS',     email: 'sarah@ecoclear.gov', role: 'Scrutiny Team',     assignedState: 'Chhattisgarh', assignedDistrict: 'Raipur',   assignedSectors: ['Mining & Quarrying', 'Thermal Power Plants', 'Iron & Steel', 'Coal Washeries'], createdAt: new Date().toISOString() },
-  { id: 'mom-1',      name: 'Mike MoM',      email: 'mike@ecoclear.gov',  role: 'MoM Team',          assignedState: 'Chhattisgarh', assignedDistrict: 'Bilaspur', assignedSectors: ['Chemical Industries', 'Cement', 'Distilleries', 'Thermal Power Plants'], createdAt: new Date().toISOString() },
+  { id: '8aW77bzQ7Rg2fot3LA3ZxQQSXlp2', name: 'Admin CECB',    email: 'admin@ecoclear.gov', role: 'Admin',             assignedState: 'Chhattisgarh', createdAt: new Date().toISOString() },
+  { id: 'lGq7LGzDRUfFWd4gMfSOMXmEBMa2', name: 'John Builder', email: 'john@builder.com',   role: 'Project Proponent', assignedState: 'Chhattisgarh', createdAt: new Date().toISOString() },
+  { id: 'KKAVuZWN7Dha3luXBDH1jGgmnDH3', name: 'Sarah EDS',     email: 'sarah@ecoclear.gov', role: 'Scrutiny Team',     assignedState: 'Chhattisgarh', assignedDistrict: 'Raipur',   assignedSectors: ['Mining & Quarrying', 'Thermal Power Plants', 'Iron & Steel', 'Coal Washeries'], createdAt: new Date().toISOString() },
+  { id: 'CbgMHuKw1QPhaDcRYdpCAmy3km63', name: 'Mike MoM',      email: 'mike@ecoclear.gov',  role: 'MoM Team',          assignedState: 'Chhattisgarh', assignedDistrict: 'Bilaspur', assignedSectors: ['Chemical Industries', 'Cement', 'Distilleries', 'Thermal Power Plants'], createdAt: new Date().toISOString() },
 ];
 
 const STORAGE_KEY = 'ecoclear_storage';

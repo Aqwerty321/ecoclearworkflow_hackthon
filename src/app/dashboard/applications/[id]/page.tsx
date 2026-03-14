@@ -609,6 +609,39 @@ export default function ApplicationDetailPage() {
                     </div>
                   </div>
                   <Button variant="outline" size="sm" onClick={() => setAnalysisResult(null)}>Clear Analysis</Button>
+
+                  {/* AI Recommendation card — derived from compliance issues count */}
+                  <div className={`p-4 rounded-xl border flex items-start gap-3 ${
+                    analysisResult.complianceIssues.length === 0
+                      ? "bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30"
+                      : analysisResult.complianceIssues.length <= 2
+                      ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
+                      : "bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30"
+                  }`}>
+                    <div className="mt-0.5">
+                      {analysisResult.complianceIssues.length === 0
+                        ? <FileCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
+                        : <AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400" />}
+                    </div>
+                    <div>
+                      <p className={`font-bold text-sm ${
+                        analysisResult.complianceIssues.length === 0
+                          ? "text-green-700 dark:text-green-400"
+                          : analysisResult.complianceIssues.length <= 2
+                          ? "text-amber-700 dark:text-amber-400"
+                          : "text-rose-700 dark:text-rose-400"
+                      }`}>
+                        AI Recommendation
+                      </p>
+                      <p className="text-sm text-foreground/80 mt-0.5">
+                        {analysisResult.complianceIssues.length === 0
+                          ? "Application appears compliant. No major issues detected — suitable for direct EC grant."
+                          : analysisResult.complianceIssues.length <= 2
+                          ? `${analysisResult.complianceIssues.length} minor compliance issue(s) identified. Consider requesting clarifications from the proponent before proceeding.`
+                          : `${analysisResult.complianceIssues.length} compliance issues detected. Recommend issuing an Environmental Data Sheet (EDS) for detailed assessment.`}
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
             </CardContent>

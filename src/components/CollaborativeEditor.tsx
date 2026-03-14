@@ -110,13 +110,11 @@ export function CollaborativeEditor({
         document: doc,
         token: hocuspocusToken || "ecoclear-collab-dev-secret",
       });
-      setServerMode(true);
     } else {
       // Tier 1 fallback: WebRTC peer-to-peer sync
       syncProvider = new WebrtcProvider(`ecoclear-mom-${documentId}`, doc, {
         signaling: ["wss://signaling.yjs.dev"],
       });
-      setServerMode(false);
     }
 
     // IndexedDB persistence for offline-first editing
@@ -124,6 +122,11 @@ export function CollaborativeEditor({
 
     return { ydoc: doc, provider: syncProvider, indexeddbProvider: idbProvider };
   }, [documentId, wsUrl, hocuspocusToken]);
+
+  // Update server mode state when wsUrl changes (must be in useEffect, not useMemo)
+  useEffect(() => {
+    setServerMode(!!wsUrl);
+  }, [wsUrl]);
 
   // Track peer connections
   useEffect(() => {
@@ -163,7 +166,8 @@ export function CollaborativeEditor({
     editable: !readOnly,
     extensions: [
       StarterKit.configure({
-        // Disable built-in history when using Yjs collaboration
+        // Disable built-in undo/redo when using Yjs collaboration (handled by y-tiptap)
+        undoRedo: false,
       }),
       Placeholder.configure({ placeholder }),
       Highlight.configure({ multicolor: true }),
