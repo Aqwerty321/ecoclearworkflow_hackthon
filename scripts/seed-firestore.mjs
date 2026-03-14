@@ -7,11 +7,32 @@
  * Uses Firebase Auth REST API + Firestore REST API (Node 22 native fetch).
  * No service-account key required — only the Web API key.
  *
- * Run:  node scripts/seed-firestore.mjs
+ * Run:  FIREBASE_API_KEY=<your-key> node scripts/seed-firestore.mjs
+ *   or: node scripts/seed-firestore.mjs  (reads from .env.local automatically)
+ *
  * Safe to re-run — every write is idempotent (skips existing docs).
  */
 
-const API_KEY    = 'AIzaSyB3EgWykv8pBFijz9d_s8-2pzb2t_uGy9Q';
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
+
+// Load .env.local if present (dev convenience)
+try {
+  const envPath = resolve(process.cwd(), '.env.local');
+  const lines = readFileSync(envPath, 'utf-8').split('\n');
+  for (const line of lines) {
+    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^['"]|['"]$/g, '');
+  }
+} catch { /* .env.local not present — that's fine */ }
+
+const API_KEY = process.env.FIREBASE_API_KEY || process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+if (!API_KEY) {
+  console.error('ERROR: FIREBASE_API_KEY is not set.');
+  console.error('Run: FIREBASE_API_KEY=<your-key> node scripts/seed-firestore.mjs');
+  process.exit(1);
+}
+
 const PROJECT_ID = 'ecoclear-a6a33';
 const AUTH_BASE  = 'https://identitytoolkit.googleapis.com/v1';
 const FS_BASE    = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
