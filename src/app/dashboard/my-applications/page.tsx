@@ -36,9 +36,11 @@ export default function MyApplicationsPage() {
   const [dateRange, setDateRange] = useState<DateRange>('all');
   const [sortOrder, setSortOrder] = useState<SortOrder>('newest');
 
-  if (!hydrated || !currentUser) return <TableSkeleton />;
-
-  const myApps = applications.filter(a => a.applicantId === currentUser.id);
+  // Compute myApps with safe default when not hydrated (avoids conditional hook call)
+  const myApps = useMemo(
+    () => (hydrated && currentUser) ? applications.filter(a => a.applicantId === currentUser.id) : [],
+    [hydrated, currentUser, applications]
+  );
 
   const filtered = useMemo(() => {
     const now = new Date();
@@ -60,8 +62,10 @@ export default function MyApplicationsPage() {
         const diff = new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
         return sortOrder === 'newest' ? -diff : diff;
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [myApps, statusFilter, dateRange, sortOrder]);
+
+  // Early return AFTER all hooks (React Rules of Hooks)
+  if (!hydrated || !currentUser) return <TableSkeleton />;
 
   return (
     <div className="space-y-6">

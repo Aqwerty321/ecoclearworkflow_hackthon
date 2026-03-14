@@ -29,6 +29,8 @@ export interface AadhaarEKYCRequest {
   transactionId: string;
   /** Consent flag — mandatory per UIDAI guidelines */
   consent: boolean;
+  /** Display name hint for mock mode (uses logged-in user's name) */
+  displayName?: string;
 }
 
 export interface AadhaarEKYCResponse {
@@ -131,12 +133,13 @@ export async function verifyAadhaarEKYC(
 
   // Return mock verified identity
   const maskedAadhaar = `XXXX-XXXX-${request.aadhaarNumber.slice(-4)}`;
+  const mockName = request.displayName || 'Rajesh Kumar Verma';
 
   return {
     success: true,
     transactionId: request.transactionId,
     identity: {
-      name: 'Rajesh Kumar Verma',
+      name: mockName,
       dateOfBirth: '1985-06-15',
       gender: 'M',
       address: 'H.No. XX, Ward XX, ****nagar, Raipur, Chhattisgarh - 492001',

@@ -37,24 +37,18 @@ export default function AllApplicationsPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [sortAsc, setSortAsc] = useState(false);
 
-  if (!hydrated) return <TableSkeleton />;
+  const isAuthorized =
+    currentUser?.role === "Admin" ||
+    currentUser?.role === "Scrutiny Team" ||
+    currentUser?.role === "MoM Team";
 
-  if (
-    currentUser?.role !== "Admin" &&
-    currentUser?.role !== "Scrutiny Team" &&
-    currentUser?.role !== "MoM Team"
-  ) {
-    return (
-      <div className="p-8 text-center text-muted-foreground">
-        Unauthorized Access
-      </div>
-    );
-  }
-
-  // Apply ABAC filtering
-  const accessibleApps = currentUser
-    ? filterApplicationsByAccess(currentUser, applications)
-    : applications;
+  // Apply ABAC filtering (safe defaults when not hydrated/authorized)
+  const accessibleApps = useMemo(
+    () => (hydrated && isAuthorized && currentUser)
+      ? filterApplicationsByAccess(currentUser, applications)
+      : [],
+    [hydrated, isAuthorized, currentUser, applications]
+  );
 
   // Derive unique sectors from accessible apps
   const availableSectors = useMemo(
@@ -90,6 +84,17 @@ export default function AllApplicationsPage() {
     }
     return counts;
   }, [accessibleApps]);
+
+  // Early returns AFTER all hooks (React Rules of Hooks)
+  if (!hydrated) return <TableSkeleton />;
+
+  if (!isAuthorized) {
+    return (
+      <div className="p-8 text-center text-muted-foreground">
+        Unauthorized Access
+      </div>
+    );
+  }
 
   const hasAbacRestrictions =
     currentUser?.role !== "Admin" &&

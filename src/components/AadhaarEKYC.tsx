@@ -38,9 +38,11 @@ interface AadhaarEKYCProps {
   compact?: boolean;
   /** Additional CSS class */
   className?: string;
+  /** Display name of the logged-in user (used in mock mode) */
+  userName?: string;
 }
 
-export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarEKYCProps) {
+export function AadhaarEKYC({ onVerified, compact = false, className, userName }: AadhaarEKYCProps) {
   const [aadhaarNumber, setAadhaarNumber] = useState("");
   const [otp, setOtp] = useState("");
   const [status, setStatus] = useState<EKYCStatus>("pending");
@@ -98,6 +100,7 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
         otp,
         transactionId,
         consent,
+        displayName: userName,
       });
 
       if (result.success && result.identity) {
@@ -114,7 +117,7 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
     } finally {
       setLoading(false);
     }
-  }, [aadhaarNumber, otp, transactionId, consent, onVerified]);
+  }, [aadhaarNumber, otp, transactionId, consent, userName, onVerified]);
 
   // Format Aadhaar with spaces: XXXX XXXX XXXX
   const formatAadhaar = (val: string) => {
@@ -200,6 +203,11 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
               </Button>
             )}
           </div>
+          {status === "pending" && (
+            <p className="text-xs text-primary/70 font-medium">
+              Demo mode: enter any 12-digit number (e.g. 999988887777)
+            </p>
+          )}
         </div>
 
         {/* Step 2: OTP Verification */}
@@ -218,6 +226,9 @@ export function AadhaarEKYC({ onVerified, compact = false, className }: AadhaarE
               />
               <p className="text-xs text-muted-foreground">
                 OTP sent to your Aadhaar-linked mobile number
+              </p>
+              <p className="text-xs text-primary/70 font-medium">
+                Demo mode: enter any 6-digit code (e.g. 123456)
               </p>
               <button
                 type="button"

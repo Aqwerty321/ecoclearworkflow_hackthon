@@ -95,6 +95,12 @@ export default function NewApplicationPage() {
       ...formData,
       applicantId: currentUser.id,
       coordinates: formData.coordinates ?? undefined,
+      // Persist eKYC identity with the application
+      ...(ekycIdentity && {
+        ekycName: ekycIdentity.name,
+        ekycMaskedAadhaar: ekycIdentity.maskedAadhaar,
+        ekycVerifiedAt: new Date().toISOString(),
+      }),
     });
 
     toast({
@@ -175,6 +181,7 @@ export default function NewApplicationPage() {
                   Aadhaar-based e-KYC (UIDAI) before submitting an Environmental Clearance application.
                 </p>
                 <AadhaarEKYC
+                  userName={currentUser?.name}
                   onVerified={(identity) => {
                     setEkycVerified(true);
                     setEkycIdentity({ name: identity.name, maskedAadhaar: identity.maskedAadhaar });

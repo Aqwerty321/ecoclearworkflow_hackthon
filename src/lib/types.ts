@@ -50,6 +50,10 @@ export interface Application {
   paidAt?: string;           // ISO timestamp of payment
   // Meeting scheduling
   scheduledMeetingAt?: string;  // ISO timestamp of the scheduled committee meeting
+  // eKYC identity (persisted from Aadhaar verification)
+  ekycName?: string;            // Verified name from UIDAI
+  ekycMaskedAadhaar?: string;   // e.g. "XXXX-XXXX-1234"
+  ekycVerifiedAt?: string;      // ISO timestamp of verification
 }
 
 export interface Document {
