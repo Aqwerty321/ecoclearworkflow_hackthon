@@ -2,16 +2,26 @@
 
 /**
  * CollaborativeEditor — Tiptap + Yjs CRDT-based rich text editor.
- * 
- * Implements the "Conflict-Free Replicated Data Types for Real-Time Editing"
- * from the upgrade plan. Uses:
- * - Tiptap (ProseMirror-based) for rich text editing
- * - Yjs for CRDT-based conflict-free collaboration
- * - y-webrtc for peer-to-peer real-time sync
- * - y-indexeddb for offline persistence (IndexedDB)
- * 
- * Mathematical guarantee: concurrent edits from multiple officials will
- * automatically converge to the same state without central sequencing.
+ *
+ * Architecture (two-component split):
+ *   CollaborativeEditor (exported wrapper)
+ *     → resolves wsUrl via runtime discovery fetch
+ *     → shows skeleton while loading
+ *     → mounts CollaborativeEditorCore once wsUrl is known
+ *
+ *   CollaborativeEditorCore (internal)
+ *     → receives stable, resolved wsUrl as prop
+ *     → ydoc is always a real Y.Doc (never null) — no Tiptap crash
+ *     → all Yjs / Tiptap hooks live here
+ *
+ * Split rationale:
+ *   React hooks cannot be called after a conditional return. If URL
+ *   resolution is async, the useMemo/useEditor would fire before the URL
+ *   is known, passing null to Collaboration.configure() and crashing with
+ *   "Cannot read properties of null (reading 'getXmlFragment')".
+ *   Moving the skeleton return to the outer wrapper (which has no hooks
+ *   after it) and mounting the inner component only when ready eliminates
+ *   the null-ydoc window entirely.
  */
 
 import { useEditor, EditorContent } from "@tiptap/react";
@@ -25,8 +35,7 @@ import * as Y from "yjs";
 import { WebrtcProvider } from "y-webrtc";
 import { HocuspocusProvider } from "@hocuspocus/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
-import { useEffect, useMemo, useState, useCallback } from "react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bold,
   Italic,
@@ -47,11 +56,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Random colors for collaboration cursors
-const CURSOR_COLORS = [
-  "#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6",
-  "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
-];
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface CollaborativeEditorProps {
   /** Unique document ID for CRDT room (e.g., applicationId) */
@@ -76,39 +81,43 @@ interface CollaborativeEditorProps {
   hocuspocusToken?: string;
 }
 
+// ── Random cursor colours ─────────────────────────────────────────────────────
+
+const CURSOR_COLORS = [
+  "#3B82F6", "#EF4444", "#10B981", "#F59E0B", "#8B5CF6",
+  "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
+];
+
+// ── Loading skeleton ──────────────────────────────────────────────────────────
+
+function EditorSkeleton({ className }: { className?: string }) {
+  return (
+    <div className={cn("border rounded-lg overflow-hidden animate-pulse", className)}>
+      <div className="h-10 bg-muted/30 border-b" />
+      <div className="min-h-[300px] p-4 bg-background">
+        <div className="h-4 bg-muted rounded w-3/4 mb-3" />
+        <div className="h-4 bg-muted rounded w-1/2 mb-3" />
+        <div className="h-4 bg-muted rounded w-5/6" />
+      </div>
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// OUTER WRAPPER — handles async URL discovery, no Yjs/Tiptap hooks here
+// ═════════════════════════════════════════════════════════════════════════════
+
 export function CollaborativeEditor({
-  documentId,
-  userName,
-  userRole,
-  initialContent,
-  onChange,
-  readOnly = false,
-  placeholder = "Start typing...",
-  className,
   hocuspocusUrl,
   hocuspocusToken,
+  ...rest
 }: CollaborativeEditorProps) {
-  const [connectedPeers, setConnectedPeers] = useState(0);
-  const [synced, setSynced] = useState(false);
-  const [serverMode, setServerMode] = useState(false);
-
-  // ── Runtime discovery of the Hocuspocus WebSocket URL ──────────────────
-  // We cannot use a build-time env var because the Cloudflare tunnel URL
-  // changes every time the tunnel restarts. Instead:
-  //   1. At mount, fetch NEXT_PUBLIC_COLLAB_DISCOVERY_URL/backend-url
-  //   2. Fall back to NEXT_PUBLIC_COLLAB_WS_URL (static, useful in dev)
-  //   3. Fall back to "" → WebRTC P2P
-  // We delay provider creation (wsUrlLoading=true) until the URL is known,
-  // so the useMemo below fires exactly once with the correct value.
-  const [wsUrl, setWsUrl] = useState<string>(() => {
-    // Prop always wins (passed explicitly by a caller that already knows the URL)
-    if (hocuspocusUrl) return hocuspocusUrl;
-    return ""; // will be resolved in the useEffect below
-  });
+  // Resolved WebSocket URL. Starts as "" (loading) and is set exactly once.
+  const [wsUrl, setWsUrl] = useState<string>(() => hocuspocusUrl ?? "");
   const [wsUrlLoading, setWsUrlLoading] = useState<boolean>(!hocuspocusUrl);
 
   useEffect(() => {
-    // If the caller passed hocuspocusUrl directly, no discovery needed
+    // Prop wins — no discovery needed
     if (hocuspocusUrl) {
       setWsUrl(hocuspocusUrl);
       setWsUrlLoading(false);
@@ -117,16 +126,16 @@ export function CollaborativeEditor({
 
     const discoveryBase =
       typeof window !== "undefined"
-        ? (process.env.NEXT_PUBLIC_COLLAB_DISCOVERY_URL || "").trim()
+        ? (process.env.NEXT_PUBLIC_COLLAB_DISCOVERY_URL ?? "").trim()
         : "";
 
     const staticWsUrl =
       typeof window !== "undefined"
-        ? (process.env.NEXT_PUBLIC_COLLAB_WS_URL || "").trim()
+        ? (process.env.NEXT_PUBLIC_COLLAB_WS_URL ?? "").trim()
         : "";
 
+    // No discovery server configured — use static env var or fall back to WebRTC
     if (!discoveryBase) {
-      // No discovery server configured — use static env var or WebRTC
       setWsUrl(staticWsUrl);
       setWsUrlLoading(false);
       return;
@@ -134,26 +143,18 @@ export function CollaborativeEditor({
 
     let cancelled = false;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
 
     fetch(`${discoveryBase}/backend-url`, { signal: controller.signal })
       .then((res) => {
-        if (!res.ok) throw new Error(`Discovery server returned ${res.status}`);
+        if (!res.ok) throw new Error(`Discovery ${res.status}`);
         return res.json() as Promise<{ ws_url: string }>;
       })
       .then((data) => {
-        if (cancelled) return;
-        if (data.ws_url) {
-          setWsUrl(data.ws_url);
-        } else {
-          // Unexpected response shape — fall back
-          setWsUrl(staticWsUrl);
-        }
+        if (!cancelled) setWsUrl(data.ws_url || staticWsUrl);
       })
       .catch(() => {
-        if (cancelled) return;
-        // Discovery failed (network error, timeout, server not running) — fall back
-        setWsUrl(staticWsUrl);
+        if (!cancelled) setWsUrl(staticWsUrl);
       })
       .finally(() => {
         clearTimeout(timeoutId);
@@ -165,52 +166,88 @@ export function CollaborativeEditor({
       controller.abort();
       clearTimeout(timeoutId);
     };
-    // hocuspocusUrl is in deps so if parent passes it later it gets picked up
   }, [hocuspocusUrl]);
 
-  // Create Yjs document and providers — deferred until wsUrl is resolved
-  const { ydoc, provider, indexeddbProvider } = useMemo(() => {
-    // wsUrlLoading guard: return dummy objects while URL is being fetched.
-    // This memo re-runs once wsUrlLoading flips to false (wsUrl is final).
-    if (wsUrlLoading) {
-      // Return placeholders — the component renders a skeleton instead
-      return { ydoc: null as unknown as Y.Doc, provider: null as unknown as WebrtcProvider, indexeddbProvider: null as unknown as IndexeddbPersistence };
-    }
+  // ── Render skeleton while URL resolves ────────────────────────────────────
+  // This return is SAFE here because there are no hooks below it in this
+  // component. CollaborativeEditorCore is a separate component and won't
+  // be affected by conditional returns in this wrapper.
+  if (wsUrlLoading) {
+    return <EditorSkeleton className={rest.className} />;
+  }
 
+  // wsUrl is now stable — mount the inner editor exactly once.
+  // key={wsUrl} ensures a clean remount if the tunnel URL ever changes
+  // (e.g., after a tunnel restart), avoiding stale provider references.
+  return (
+    <CollaborativeEditorCore
+      key={wsUrl}
+      wsUrl={wsUrl}
+      hocuspocusToken={hocuspocusToken}
+      {...rest}
+    />
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════════
+// INNER CORE — receives stable wsUrl, initialises Yjs + Tiptap synchronously
+// ═════════════════════════════════════════════════════════════════════════════
+
+interface CoreProps extends CollaborativeEditorProps {
+  /** Already-resolved WebSocket URL (may be "" for WebRTC fallback) */
+  wsUrl: string;
+}
+
+function CollaborativeEditorCore({
+  documentId,
+  userName,
+  userRole,
+  initialContent,
+  onChange,
+  readOnly = false,
+  placeholder = "Start typing...",
+  className,
+  wsUrl,
+  hocuspocusToken,
+}: CoreProps) {
+  const [connectedPeers, setConnectedPeers] = useState(0);
+  const [synced, setSynced] = useState(false);
+  const [serverMode] = useState<boolean>(!!wsUrl);
+
+  // ── Yjs document + network providers ─────────────────────────────────────
+  // wsUrl is stable (set once by the outer wrapper), so this memo runs
+  // exactly once. ydoc is ALWAYS a real Y.Doc — never null.
+  const { ydoc, provider, indexeddbProvider } = useMemo(() => {
     const doc = new Y.Doc();
 
-    let syncProvider: WebrtcProvider | HocuspocusProvider;
+    const syncProvider: WebrtcProvider | HocuspocusProvider = wsUrl
+      ? new HocuspocusProvider({
+          url: wsUrl,
+          name: `ecoclear-mom-${documentId}`,
+          document: doc,
+          token: hocuspocusToken || "ecoclear-collab-dev-secret",
+        })
+      : new WebrtcProvider(`ecoclear-mom-${documentId}`, doc, {
+          signaling: ["wss://signaling.yjs.dev"],
+        });
 
-    if (wsUrl) {
-      // Tier 3: Hocuspocus server-authoritative sync
-      syncProvider = new HocuspocusProvider({
-        url: wsUrl,
-        name: `ecoclear-mom-${documentId}`,
-        document: doc,
-        token: hocuspocusToken || "ecoclear-collab-dev-secret",
-      });
-    } else {
-      // Tier 1 fallback: WebRTC peer-to-peer sync
-      syncProvider = new WebrtcProvider(`ecoclear-mom-${documentId}`, doc, {
-        signaling: ["wss://signaling.yjs.dev"],
-      });
-    }
-
-    // IndexedDB persistence for offline-first editing
     const idbProvider = new IndexeddbPersistence(`ecoclear-mom-${documentId}`, doc);
 
     return { ydoc: doc, provider: syncProvider, indexeddbProvider: idbProvider };
-  }, [documentId, wsUrl, wsUrlLoading, hocuspocusToken]);
+  // documentId and wsUrl are stable (component is re-keyed if they change)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // Update server mode state when wsUrl changes (must be in useEffect, not useMemo)
-  useEffect(() => {
-    if (!wsUrlLoading) setServerMode(!!wsUrl);
-  }, [wsUrl, wsUrlLoading]);
+  // ── Random cursor colour for this session ─────────────────────────────────
+  const cursorColor = useMemo(
+    () => CURSOR_COLORS[Math.floor(Math.random() * CURSOR_COLORS.length)],
+    []
+  );
 
-  // Track peer connections
+  // ── Peer awareness + cleanup ──────────────────────────────────────────────
   useEffect(() => {
-    if (wsUrlLoading || !provider) return;
     const awareness = provider.awareness;
+
     if (!awareness) {
       setSynced(true);
       return () => {
@@ -234,33 +271,28 @@ export function CollaborativeEditor({
       indexeddbProvider.destroy();
       ydoc.destroy();
     };
-  }, [provider, indexeddbProvider, ydoc, wsUrlLoading]);
+  }, [provider, indexeddbProvider, ydoc]);
 
-  // Pick a random color for this user's cursor
-  const cursorColor = useMemo(
-    () => CURSOR_COLORS[Math.floor(Math.random() * CURSOR_COLORS.length)],
-    []
-  );
-
+  // ── Tiptap editor ─────────────────────────────────────────────────────────
+  // ydoc is always a real Y.Doc here — no null crash possible.
   const editor = useEditor({
     editable: !readOnly,
     extensions: [
       StarterKit.configure({
-        // Disable built-in undo/redo when using Yjs collaboration (handled by y-tiptap)
+        // Disable built-in undo/redo — Yjs manages history via y-prosemirror
         undoRedo: false,
       }),
       Placeholder.configure({ placeholder }),
       Highlight.configure({ multicolor: true }),
+      // Explicitly register Underline (not included in StarterKit by default)
       Underline,
-      Collaboration.configure({
-        document: ydoc,
-      }),
+      Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
         provider,
         user: {
           name: userName,
           color: cursorColor,
-          role: userRole || "",
+          role: userRole ?? "",
         },
       }),
     ],
@@ -279,7 +311,7 @@ export function CollaborativeEditor({
     },
   });
 
-  // Populate initial content if the CRDT doc is empty
+  // ── Populate initial content once synced ─────────────────────────────────
   useEffect(() => {
     if (editor && initialContent && synced) {
       const currentContent = editor.getText().trim();
@@ -290,21 +322,6 @@ export function CollaborativeEditor({
   }, [editor, initialContent, synced]);
 
   if (!editor) return null;
-
-  // Show a minimal skeleton while the discovery fetch is in-flight (~100ms).
-  // This prevents the useMemo from firing prematurely with an empty wsUrl.
-  if (wsUrlLoading) {
-    return (
-      <div className={cn("border rounded-lg overflow-hidden animate-pulse", className)}>
-        <div className="h-10 bg-muted/30 border-b" />
-        <div className="min-h-[300px] p-4 bg-background">
-          <div className="h-4 bg-muted rounded w-3/4 mb-3" />
-          <div className="h-4 bg-muted rounded w-1/2 mb-3" />
-          <div className="h-4 bg-muted rounded w-5/6" />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className={cn("border rounded-lg overflow-hidden", className)}>
@@ -417,7 +434,10 @@ export function CollaborativeEditor({
         {/* Collaboration status */}
         <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
           {serverMode && (
-            <div className="flex items-center gap-1 text-blue-500 dark:text-blue-400" title="Hocuspocus server sync">
+            <div
+              className="flex items-center gap-1 text-blue-500 dark:text-blue-400"
+              title="Hocuspocus server sync"
+            >
               <Server className="h-3 w-3" />
             </div>
           )}
@@ -446,7 +466,7 @@ export function CollaborativeEditor({
   );
 }
 
-// ---- Toolbar Button ----
+// ── Toolbar Button ─────────────────────────────────────────────────────────────
 
 function ToolbarButton({
   onClick,
@@ -454,14 +474,12 @@ function ToolbarButton({
   disabled,
   title,
   children,
-  size = "default",
 }: {
   onClick?: () => void;
   active?: boolean;
   disabled?: boolean;
   title?: string;
   children: React.ReactNode;
-  size?: "default" | "sm";
 }) {
   return (
     <button
@@ -470,8 +488,7 @@ function ToolbarButton({
       disabled={disabled}
       title={title}
       className={cn(
-        "rounded transition-colors",
-        size === "sm" ? "p-1" : "p-1.5",
+        "rounded p-1.5 transition-colors",
         active
           ? "bg-primary/10 text-primary"
           : "text-muted-foreground hover:bg-muted hover:text-foreground",

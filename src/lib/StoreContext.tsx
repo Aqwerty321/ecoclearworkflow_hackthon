@@ -225,13 +225,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       })
     );
 
-    // Listen to payments
-    unsubscribers.push(
-      onSnapshot(collection(db!, PAYMENTS), (snap) => {
-        const paymentsList = snap.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
-        setData(prev => ({ ...prev, payments: paymentsList }));
-      })
-    );
+    // Listen to payments — filtered by the current user's uid so the
+    // rule (resource.data.userId == request.auth.uid || isAdmin()) is
+    // satisfied for ALL documents returned, preventing permission-denied.
+    // Admins also only see their own payments here; cross-user payment
+    // lookup happens per-application in the detail view (getDoc).
+    const paymentsQuery = fbAuth.currentUser
+      ? query(collection(fbDb, PAYMENTS), where("userId", "==", fbAuth.currentUser.uid))
+      : null;
+    if (paymentsQuery) {
+      unsubscribers.push(
+        onSnapshot(paymentsQuery, (snap) => {
+          const paymentsList = snap.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
+          setData(prev => ({ ...prev, payments: paymentsList }));
+        })
+      );
+    }
 
     // Auth state listener
     unsubscribers.push(
