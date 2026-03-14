@@ -28,7 +28,6 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
-import Underline from "@tiptap/extension-underline";
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
 import * as Y from "yjs";
@@ -253,7 +252,11 @@ function CollaborativeEditorCore({
       return () => {
         provider.destroy();
         indexeddbProvider.destroy();
-        ydoc.destroy();
+        // Do NOT destroy ydoc here: Tiptap's useEditor schedules destruction
+        // asynchronously (setTimeout 1ms). Destroying ydoc synchronously in
+        // this cleanup causes a use-after-free when ProseMirror fires its final
+        // transaction during editor teardown ("Cannot read properties of
+        // undefined (reading 'doc')"). Let the GC reclaim it instead.
       };
     }
 
@@ -269,7 +272,7 @@ function CollaborativeEditorCore({
       awareness.off("change", handlePeers);
       provider.destroy();
       indexeddbProvider.destroy();
-      ydoc.destroy();
+      // Same reason: do NOT call ydoc.destroy() here.
     };
   }, [provider, indexeddbProvider, ydoc]);
 
@@ -284,8 +287,7 @@ function CollaborativeEditorCore({
       }),
       Placeholder.configure({ placeholder }),
       Highlight.configure({ multicolor: true }),
-      // Explicitly register Underline (not included in StarterKit by default)
-      Underline,
+      // Note: Underline is included in StarterKit v3 by default — no need to add it explicitly
       Collaboration.configure({ document: ydoc }),
       CollaborationCursor.configure({
         provider,
