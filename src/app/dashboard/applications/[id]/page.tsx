@@ -20,6 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
 import { scrutinyDocumentSummaryAndFlagging } from "@/ai/flows/scrutiny-document-summary-and-flagging";
 import { generateMeetingGist } from "@/ai/flows/generate-meeting-gist";
+import { regulatoryComplianceCheck, type RegulatoryComplianceOutput } from "@/ai/flows/regulatory-compliance-check";
 import { analyzeSatellite, type SatelliteAnalysisResponse } from "@/lib/api-client";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -72,6 +73,8 @@ export default function ApplicationDetailPage() {
   const router = useRouter();
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<any>(null);
+  const [complianceResult, setComplianceResult] = useState<RegulatoryComplianceOutput | null>(null);
+  const [complianceLoading, setComplianceLoading] = useState(false);
   const [satelliteResult, setSatelliteResult] = useState<SatelliteAnalysisResponse | null>(null);
   const [satelliteLoading, setSatelliteLoading] = useState(false);
   
@@ -226,6 +229,34 @@ export default function ApplicationDetailPage() {
       toast({ variant: "destructive", title: "AI Error", description: "Failed to run AI analysis." });
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const runComplianceCheck = async () => {
+    setComplianceLoading(true);
+    try {
+      const res = await regulatoryComplianceCheck({
+        projectName: application.projectName,
+        industrySector: application.industrySector,
+        category: application.category,
+        projectDescription: application.description,
+        location: application.location,
+        district: application.district,
+        uploadedDocumentTypes: appDocs.map(d => d.type),
+        existingComments: appComments.map(c => c.comment),
+      });
+      setComplianceResult(res);
+      // Persist environmental risk summary for MoM enrichment
+      if (res.environmentalRiskSummary) {
+        updateApplication(application.id, {
+          riskSummary: res.environmentalRiskSummary,
+        });
+      }
+    } catch (err) {
+      console.error('[compliance] AI compliance check failed:', err);
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to run regulatory compliance check." });
+    } finally {
+      setComplianceLoading(false);
     }
   };
 
@@ -643,6 +674,142 @@ export default function ApplicationDetailPage() {
                       </p>
                     </div>
                   </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Regulatory Compliance Check — sector-specific parameter analysis */}
+          <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 shadow-sm mt-4">
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-6 w-6 text-primary" />
+                <CardTitle>Regulatory Compliance Check</CardTitle>
+              </div>
+              <CardDescription>
+                Cross-reference application against CECB sector-specific regulatory parameters
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {!complianceResult ? (
+                <div className="text-center py-8">
+                  <Button onClick={runComplianceCheck} disabled={complianceLoading} className="font-bold">
+                    {complianceLoading ? "Checking Compliance..." : "Run Compliance Check"}
+                  </Button>
+                </div>
+              ) : (
+                <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
+                  {/* Score and risk level header */}
+                  <div className="flex flex-col sm:flex-row gap-4">
+                    <div className={cn(
+                      "flex-1 p-4 rounded-xl border text-center",
+                      complianceResult.overallScore >= 70
+                        ? "bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30"
+                        : complianceResult.overallScore >= 40
+                        ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
+                        : "bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30"
+                    )}>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Compliance Score</p>
+                      <p className={cn(
+                        "text-3xl font-bold mt-1",
+                        complianceResult.overallScore >= 70 ? "text-green-700 dark:text-green-400"
+                          : complianceResult.overallScore >= 40 ? "text-amber-700 dark:text-amber-400"
+                          : "text-rose-700 dark:text-rose-400"
+                      )}>
+                        {complianceResult.overallScore}/100
+                      </p>
+                    </div>
+                    <div className={cn(
+                      "flex-1 p-4 rounded-xl border text-center",
+                      complianceResult.riskLevel === 'low' ? "bg-green-50 dark:bg-green-500/10 border-green-200 dark:border-green-500/30"
+                        : complianceResult.riskLevel === 'medium' ? "bg-amber-50 dark:bg-amber-500/10 border-amber-200 dark:border-amber-500/30"
+                        : "bg-rose-50 dark:bg-rose-500/10 border-rose-200 dark:border-rose-500/30"
+                    )}>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Risk Level</p>
+                      <p className={cn(
+                        "text-xl font-bold mt-2 uppercase",
+                        complianceResult.riskLevel === 'low' ? "text-green-700 dark:text-green-400"
+                          : complianceResult.riskLevel === 'medium' ? "text-amber-700 dark:text-amber-400"
+                          : "text-rose-700 dark:text-rose-400"
+                      )}>
+                        {complianceResult.riskLevel}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Sector-specific findings */}
+                  {complianceResult.sectorSpecificFindings.length > 0 && (
+                    <div className="p-4 bg-card rounded-xl border">
+                      <h3 className="font-bold text-primary mb-3">Sector-Specific Findings ({complianceResult.sectorSpecificFindings.length})</h3>
+                      <div className="space-y-3 max-h-64 overflow-y-auto">
+                        {complianceResult.sectorSpecificFindings.map((f, i) => (
+                          <div key={i} className={cn(
+                            "p-3 rounded-lg border-l-4 text-sm",
+                            f.severity === 'critical' ? "border-l-red-500 bg-red-50/50 dark:bg-red-500/5"
+                              : f.severity === 'major' ? "border-l-amber-500 bg-amber-50/50 dark:bg-amber-500/5"
+                              : f.severity === 'minor' ? "border-l-blue-500 bg-blue-50/50 dark:bg-blue-500/5"
+                              : "border-l-gray-400 bg-muted/30"
+                          )}>
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-foreground">{f.parameter}</span>
+                              <div className="flex gap-2">
+                                <span className={cn(
+                                  "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded",
+                                  f.status === 'compliant' ? "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-400"
+                                    : f.status === 'non_compliant' ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400"
+                                    : f.status === 'missing' ? "bg-gray-100 text-gray-700 dark:bg-gray-500/20 dark:text-gray-400"
+                                    : "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+                                )}>{f.status.replace('_', ' ')}</span>
+                                <span className={cn(
+                                  "text-[10px] font-bold uppercase px-1.5 py-0.5 rounded",
+                                  f.severity === 'critical' ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-400"
+                                    : f.severity === 'major' ? "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400"
+                                    : f.severity === 'minor' ? "bg-blue-100 text-blue-700 dark:bg-blue-500/20 dark:text-blue-400"
+                                    : "bg-gray-100 text-gray-600 dark:bg-gray-500/20 dark:text-gray-400"
+                                )}>{f.severity}</span>
+                              </div>
+                            </div>
+                            <p className="text-foreground/70">{f.details}</p>
+                            <p className="text-xs text-primary/80 mt-1 italic">{f.recommendation}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Missing documents */}
+                  {complianceResult.missingDocuments.length > 0 && (
+                    <div className="p-4 bg-card rounded-xl border border-rose-200 dark:border-rose-500/30">
+                      <h3 className="font-bold text-rose-700 dark:text-rose-400 mb-2 flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4" /> Missing Documents ({complianceResult.missingDocuments.length})
+                      </h3>
+                      <ul className="list-disc pl-5 space-y-1">
+                        {complianceResult.missingDocuments.map((doc, i) => (
+                          <li key={i} className="text-sm text-foreground/80">{doc}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Environmental risk summary */}
+                  {complianceResult.environmentalRiskSummary && (
+                    <div className="p-4 bg-card rounded-xl border border-indigo-200 dark:border-indigo-500/30">
+                      <h3 className="font-bold text-indigo-700 dark:text-indigo-400 mb-2">Environmental Risk Summary</h3>
+                      <p className="text-sm text-foreground/80">{complianceResult.environmentalRiskSummary}</p>
+                    </div>
+                  )}
+
+                  {/* EDS recommendation */}
+                  {complianceResult.edsRecommendation && (
+                    <div className="p-4 bg-card rounded-xl border border-amber-200 dark:border-amber-500/30">
+                      <h3 className="font-bold text-amber-700 dark:text-amber-400 mb-2 flex items-center gap-2">
+                        <Send className="h-4 w-4" /> Recommended EDS Communication
+                      </h3>
+                      <p className="text-sm text-foreground/80 whitespace-pre-wrap">{complianceResult.edsRecommendation}</p>
+                    </div>
+                  )}
+
+                  <Button variant="outline" size="sm" onClick={() => setComplianceResult(null)}>Clear Results</Button>
                 </div>
               )}
             </CardContent>
