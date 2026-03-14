@@ -175,12 +175,17 @@ export default function Home() {
                 </ShimmerButton>
               </form>
             </CardContent>
-            <CardFooter className="flex justify-center border-t border-border/50 pt-4">
+            <CardFooter className="flex flex-col gap-3 border-t border-border/50 pt-4">
               <p className="text-sm text-muted-foreground">
                 New proponent?{" "}
                 <Link href="/register" className="text-primary font-semibold hover:underline transition-colors">
                   Register here
                 </Link>
+              </p>
+              <p className="text-xs text-muted-foreground/60">
+                <Link href="/privacy" className="hover:underline transition-colors">Privacy Policy</Link>
+                {" · "}
+                <Link href="/terms" className="hover:underline transition-colors">Terms of Service</Link>
               </p>
             </CardFooter>
           </Card>

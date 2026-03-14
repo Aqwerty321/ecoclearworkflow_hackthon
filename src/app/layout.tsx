@@ -18,6 +18,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: 'EcoClear Workflow - Environmental Clearance System',
   description: 'Streamlined environmental application and review workflow',
+  verification: {
+    google: 'b22c15bd5fae4289',
+  },
 };
 
 export default function RootLayout({
