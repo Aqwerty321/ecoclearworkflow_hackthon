@@ -45,6 +45,10 @@ export default function AdminUsersPage() {
   );
 
   const handleRoleChange = (userId: string, role: UserRole) => {
+    if (userId === currentUser?.id) {
+      toast({ variant: "destructive", title: "Action Denied", description: "You cannot change your own role." });
+      return;
+    }
     updateUserRole(userId, role);
     toast({ title: "Role Updated", description: "User permissions updated successfully." });
   };

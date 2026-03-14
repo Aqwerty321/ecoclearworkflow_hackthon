@@ -15,6 +15,26 @@ import { SpotlightCard } from "@/components/ui/spotlight-card";
 import { CountUp } from "@/components/ui/count-up";
 import { cn } from "@/lib/utils";
 import { DashboardSkeleton } from "@/components/ui/page-skeleton";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+} from "recharts";
+
+// Tailwind → hex for recharts (can't use CSS variables inside SVG)
+const STATUS_COLORS: Record<string, string> = {
+  Draft:        "#94a3b8", // slate-400
+  Submitted:    "#60a5fa", // blue-400
+  UnderScrutiny:"#fbbf24", // amber-400
+  EDS:          "#c084fc", // purple-400
+  Referred:     "#818cf8", // indigo-400
+  MoMGenerated: "#2dd4bf", // teal-400
+  Finalized:    "#34d399", // emerald-400
+};
 
 export default function AdminDashboardPage() {
   const { applications, users, sectors, templates, currentUser, hydrated } = useAppStore();
@@ -99,16 +119,22 @@ export default function AdminDashboardPage() {
     },
   ];
 
-  // Status distribution for a simple breakdown
-  const statusBreakdown: { label: string; count: number; color: string }[] = [
-    { label: "Draft", count: applications.filter(a => a.status === 'Draft').length, color: "bg-slate-400" },
-    { label: "Submitted", count: applications.filter(a => a.status === 'Submitted').length, color: "bg-blue-400" },
-    { label: "Under Scrutiny", count: applications.filter(a => a.status === 'UnderScrutiny').length, color: "bg-amber-400" },
-    { label: "EDS", count: applications.filter(a => a.status === 'EDS').length, color: "bg-purple-400" },
-    { label: "Referred", count: applications.filter(a => a.status === 'Referred').length, color: "bg-indigo-400" },
-    { label: "MoM Generated", count: applications.filter(a => a.status === 'MoMGenerated').length, color: "bg-teal-400" },
-    { label: "Finalized", count: applications.filter(a => a.status === 'Finalized').length, color: "bg-emerald-400" },
-  ].filter(s => s.count > 0);
+  // Build chart data in pipeline order
+  const PIPELINE_ORDER = ["Draft","Submitted","UnderScrutiny","EDS","Referred","MoMGenerated","Finalized"];
+  const LABEL_MAP: Record<string, string> = {
+    Draft: "Draft",
+    Submitted: "Submitted",
+    UnderScrutiny: "Scrutiny",
+    EDS: "EDS",
+    Referred: "Referred",
+    MoMGenerated: "MoM",
+    Finalized: "Finalized",
+  };
+  const chartData = PIPELINE_ORDER.map(status => ({
+    name: LABEL_MAP[status],
+    status,
+    count: applications.filter(a => a.status === status).length,
+  }));
 
   return (
     <div className="space-y-6">
@@ -184,37 +210,52 @@ export default function AdminDashboardPage() {
           </Card>
         </AnimatedContainer>
 
-        {/* Pipeline Status Breakdown */}
+        {/* Pipeline Status Chart */}
         <AnimatedContainer animation="slide-up" delay={450}>
           <Card className="shadow-sm border-border/50 h-full">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-primary" />
-                Pipeline Status
+                Pipeline Analytics
               </CardTitle>
-              <CardDescription>Current distribution of all applications</CardDescription>
+              <CardDescription>Applications by stage — total {totalApps}</CardDescription>
             </CardHeader>
             <CardContent>
-              {statusBreakdown.length === 0 ? (
+              {totalApps === 0 ? (
                 <div className="text-center py-8 text-muted-foreground">
                   <FileText className="h-8 w-8 mx-auto mb-2 opacity-30" />
                   <p className="text-sm">No applications yet</p>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {statusBreakdown.map((item) => (
-                    <div key={item.label} className="flex items-center gap-3">
-                      <span className="text-sm text-muted-foreground w-28 flex-shrink-0">{item.label}</span>
-                      <div className="flex-1 bg-muted/40 rounded-full h-2">
-                        <div
-                          className={cn("h-2 rounded-full transition-all", item.color)}
-                          style={{ width: `${totalApps > 0 ? (item.count / totalApps) * 100 : 0}%` }}
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={chartData} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
+                    <XAxis
+                      dataKey="name"
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tick={{ fontSize: 10 }}
+                      axisLine={false}
+                      tickLine={false}
+                    />
+                    <Tooltip
+                      cursor={{ fill: "rgba(0,0,0,0.04)" }}
+                      contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                      formatter={(value: number) => [value, "Applications"]}
+                    />
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]} maxBarSize={36}>
+                      {chartData.map((entry) => (
+                        <Cell
+                          key={entry.status}
+                          fill={STATUS_COLORS[entry.status] ?? "#94a3b8"}
                         />
-                      </div>
-                      <span className="text-sm font-semibold tabular-nums w-6 text-right">{item.count}</span>
-                    </div>
-                  ))}
-                </div>
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
               )}
               <div className="mt-4 pt-4 border-t border-border/50">
                 <Button variant="outline" size="sm" asChild className="w-full gap-2">
@@ -230,3 +271,4 @@ export default function AdminDashboardPage() {
     </div>
   );
 }
+

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw, ShieldCheck, ShieldAlert, MapPin, Navigation } from "lucide-react";
+import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw, ShieldCheck, ShieldAlert, MapPin, Navigation, Award, Printer, Loader2, ClipboardList } from "lucide-react";
 import { UPIPayment, FEE_SCHEDULE } from "@/components/UPIPayment";
 import { computeSHA256 } from "@/lib/crypto";
 import { useParams, useRouter } from "next/navigation";
@@ -20,7 +20,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useState, useRef } from "react";
 import { scrutinyDocumentSummaryAndFlagging } from "@/ai/flows/scrutiny-document-summary-and-flagging";
 import { generateMeetingGist } from "@/ai/flows/generate-meeting-gist";
-import { regulatoryComplianceCheck, type RegulatoryComplianceOutput } from "@/ai/flows/regulatory-compliance-check";
+import { regulatoryComplianceCheck, generateEDSDraft, type RegulatoryComplianceOutput, type EDSDraftOutput } from "@/ai/flows/regulatory-compliance-check";
 import { analyzeSatellite, type SatelliteAnalysisResponse } from "@/lib/api-client";
 import { storage } from "@/lib/firebase";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -77,6 +77,8 @@ export default function ApplicationDetailPage() {
   const [complianceLoading, setComplianceLoading] = useState(false);
   const [satelliteResult, setSatelliteResult] = useState<SatelliteAnalysisResponse | null>(null);
   const [satelliteLoading, setSatelliteLoading] = useState(false);
+  const [edsDraftResult, setEdsDraftResult] = useState<EDSDraftOutput | null>(null);
+  const [edsDraftLoading, setEdsDraftLoading] = useState(false);
   
   // Upload state
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -260,6 +262,32 @@ export default function ApplicationDetailPage() {
     }
   };
 
+  const runEDSDraft = async () => {
+    setEdsDraftLoading(true);
+    try {
+      const deficiencies = complianceResult
+        ? complianceResult.sectorSpecificFindings
+            .filter(f => f.status !== 'compliant')
+            .map(f => `${f.parameter}: ${f.details}`)
+        : analysisResult?.complianceIssues ?? [];
+      const missingDocuments = complianceResult?.missingDocuments ?? [];
+      const res = await generateEDSDraft({
+        projectName: application.projectName,
+        applicantName: application.ekycName ?? 'Project Proponent',
+        industrySector: application.industrySector,
+        category: application.category,
+        deficiencies,
+        missingDocuments,
+      });
+      setEdsDraftResult(res);
+    } catch (err) {
+      console.error('[eds-draft] Failed:', err);
+      toast({ variant: "destructive", title: "AI Error", description: "Failed to generate EDS letter." });
+    } finally {
+      setEdsDraftLoading(false);
+    }
+  };
+
   const runSatelliteAnalysis = async () => {
     if (!application.coordinates) return;
     setSatelliteLoading(true);
@@ -403,6 +431,104 @@ export default function ApplicationDetailPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* EC Certificate — shown only when Finalized */}
+          {isFinalized && (
+            <div className="mt-6 print:mt-0">
+              <Card className="border-2 border-emerald-400 dark:border-emerald-500 shadow-lg bg-gradient-to-br from-emerald-50 to-white dark:from-emerald-950/20 dark:to-card overflow-hidden">
+                {/* Header band */}
+                <div className="bg-emerald-600 dark:bg-emerald-700 px-6 py-4 flex items-center gap-4">
+                  <div className="p-2 bg-white/20 rounded-full">
+                    <Award className="h-8 w-8 text-white" />
+                  </div>
+                  <div>
+                    <p className="text-emerald-100 text-xs font-semibold uppercase tracking-widest">Chhattisgarh Environment Conservation Board</p>
+                    <h2 className="text-white text-xl font-bold">Environmental Clearance Certificate</h2>
+                  </div>
+                </div>
+                <CardContent className="p-6 space-y-6">
+                  {/* Certificate no & date */}
+                  <div className="flex flex-wrap gap-6 text-sm">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Certificate No.</p>
+                      <p className="font-mono font-bold text-primary">{`CECB/EC/${new Date(application.updatedAt).getFullYear()}/${application.id.slice(-8).toUpperCase()}`}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Issue Date</p>
+                      <p className="font-semibold">{new Date(application.updatedAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' })}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Application ID</p>
+                      <p className="font-mono text-xs">{application.id}</p>
+                    </div>
+                  </div>
+
+                  {/* Divider */}
+                  <div className="border-t border-emerald-200 dark:border-emerald-700" />
+
+                  {/* Project details */}
+                  <div className="grid sm:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Project Name</p>
+                      <p className="font-semibold text-base">{application.projectName}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Industry Sector</p>
+                      <p className="font-semibold">{application.industrySector}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Category</p>
+                      <p className="font-semibold">Category {application.category}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-bold text-muted-foreground uppercase">Project Location</p>
+                      <p className="font-semibold">{application.location || 'As per application'}{application.district ? `, ${application.district}` : ''}</p>
+                    </div>
+                    {application.ekycName && (
+                      <div>
+                        <p className="text-xs font-bold text-muted-foreground uppercase">Verified Applicant</p>
+                        <p className="font-semibold flex items-center gap-1">
+                          <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
+                          {application.ekycName}
+                          {application.ekycMaskedAadhaar && <span className="text-xs text-muted-foreground">(Aadhaar: {application.ekycMaskedAadhaar})</span>}
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Divider */}
+                  <div className="border-t border-emerald-200 dark:border-emerald-700" />
+
+                  {/* Attestation text */}
+                  <p className="text-sm text-foreground/70 leading-relaxed italic">
+                    This is to certify that the above-mentioned project has been reviewed by the Chhattisgarh Environment Conservation Board and is hereby granted Environmental Clearance subject to compliance with all applicable conditions under the Environment Protection Act, 1986 and rules made thereunder. The proponent shall adhere to the environmental safeguards as outlined in the approved EIA report and comply with all conditions imposed during the scrutiny process.
+                  </p>
+
+                  {/* Footer: seal + print */}
+                  <div className="flex items-end justify-between pt-2">
+                    <div className="flex items-center gap-3">
+                      <div className="h-16 w-16 rounded-full border-2 border-emerald-400 flex items-center justify-center bg-emerald-50 dark:bg-emerald-900/30">
+                        <Award className="h-8 w-8 text-emerald-600" />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm">Member Secretary</p>
+                        <p className="text-xs text-muted-foreground">Chhattisgarh Environment Conservation Board</p>
+                        <p className="text-xs text-muted-foreground">Raipur, Chhattisgarh</p>
+                      </div>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="border-emerald-400 text-emerald-700 hover:bg-emerald-50 print:hidden"
+                      onClick={() => window.print()}
+                    >
+                      <Printer className="mr-2 h-4 w-4" /> Print Certificate
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
 
         <TabsContent value="documents" className="mt-6">
@@ -806,6 +932,52 @@ export default function ApplicationDetailPage() {
                         <Send className="h-4 w-4" /> Recommended EDS Communication
                       </h3>
                       <p className="text-sm text-foreground/80 whitespace-pre-wrap">{complianceResult.edsRecommendation}</p>
+                    </div>
+                  )}
+
+                  {/* Generate EDS Draft Letter via AI */}
+                  {isScrutiny && (
+                    <div className="p-4 bg-card rounded-xl border border-primary/20">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-bold text-primary flex items-center gap-2">
+                          <ClipboardList className="h-4 w-4" /> AI-Generated EDS Letter
+                        </h3>
+                        <Button size="sm" onClick={runEDSDraft} disabled={edsDraftLoading}>
+                          {edsDraftLoading
+                            ? <><Loader2 className="mr-2 h-3 w-3 animate-spin" /> Generating...</>
+                            : edsDraftResult ? 'Regenerate' : 'Generate EDS Letter'}
+                        </Button>
+                      </div>
+                      {edsDraftResult ? (
+                        <div className="space-y-3 animate-in fade-in duration-500">
+                          <div className="p-3 bg-muted/40 rounded-lg border text-sm">
+                            <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Subject</p>
+                            <p className="font-semibold">{edsDraftResult.subject}</p>
+                          </div>
+                          <div className="p-3 bg-muted/40 rounded-lg border text-sm">
+                            <p className="text-xs font-bold text-muted-foreground uppercase mb-1">Letter Body</p>
+                            <p className="whitespace-pre-wrap text-foreground/80 text-xs leading-relaxed">{edsDraftResult.body}</p>
+                          </div>
+                          {edsDraftResult.attachmentChecklist.length > 0 && (
+                            <div className="p-3 bg-muted/40 rounded-lg border text-sm">
+                              <p className="text-xs font-bold text-muted-foreground uppercase mb-2">Required Attachments / Actions</p>
+                              <ul className="space-y-1">
+                                {edsDraftResult.attachmentChecklist.map((item, i) => (
+                                  <li key={i} className="flex items-start gap-2 text-xs text-foreground/80">
+                                    <CheckCircle className="h-3 w-3 text-primary mt-0.5 shrink-0" />
+                                    {item}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <p className="text-xs text-muted-foreground">Recommended deadline: <span className="font-semibold">{edsDraftResult.deadlineDays} days</span></p>
+                        </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">
+                          Generate a formal EDS communication letter ready to send to the proponent, based on the compliance findings above.
+                        </p>
+                      )}
                     </div>
                   )}
 
