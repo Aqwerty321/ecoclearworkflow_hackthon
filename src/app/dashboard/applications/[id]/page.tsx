@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw, ShieldCheck, ShieldAlert, MapPin, Navigation, Award, Printer, Loader2, ClipboardList } from "lucide-react";
+import { FileText, Download, Upload, AlertTriangle, Send, CheckCircle, FileCheck, Brain, Edit3, CreditCard, MessageSquare, RotateCcw, ShieldCheck, ShieldAlert, MapPin, Navigation, Award, Printer, Loader2, ClipboardList, Save, Bot } from "lucide-react";
 import { UPIPayment, FEE_SCHEDULE } from "@/components/UPIPayment";
 import { computeSHA256 } from "@/lib/crypto";
 import { useParams, useRouter } from "next/navigation";
@@ -80,6 +80,12 @@ export default function ApplicationDetailPage() {
   const [satelliteLoading, setSatelliteLoading] = useState(false);
   const [edsDraftResult, setEdsDraftResult] = useState<EDSDraftOutput | null>(null);
   const [edsDraftLoading, setEdsDraftLoading] = useState(false);
+
+  // Human-in-the-loop state
+  const [proposedRiskSummary, setProposedRiskSummary] = useState<string | null>(null);
+  const [referDialogOpen, setReferDialogOpen] = useState(false);
+  const [referGistLoading, setReferGistLoading] = useState(false);
+  const [referGistDraft, setReferGistDraft] = useState("");
   
   // Upload state
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
@@ -223,11 +229,9 @@ export default function ApplicationDetailPage() {
         documentUrls,
       });
       setAnalysisResult(res);
-      // Persist potential impacts as riskSummary for MoM draft enrichment
+      // Propose risk summary for human review — officer must explicitly save
       if (res.potentialImpacts?.length) {
-        updateApplication(application.id, {
-          riskSummary: res.potentialImpacts.map((p: { issue: string }) => p.issue).join('; '),
-        });
+        setProposedRiskSummary(res.potentialImpacts.map((p: { issue: string }) => p.issue).join('; '));
       }
     } catch (err) {
       console.error('[scrutiny] AI analysis failed:', err);
@@ -251,11 +255,9 @@ export default function ApplicationDetailPage() {
         existingComments: appComments.map(c => c.comment),
       });
       setComplianceResult(res);
-      // Persist environmental risk summary for MoM enrichment
+      // Propose risk summary for human review — do not auto-save
       if (res.environmentalRiskSummary) {
-        updateApplication(application.id, {
-          riskSummary: res.environmentalRiskSummary,
-        });
+        setProposedRiskSummary(res.environmentalRiskSummary);
       }
     } catch (err) {
       console.error('[compliance] AI compliance check failed:', err);
@@ -313,8 +315,19 @@ export default function ApplicationDetailPage() {
     }
   };
 
-  const referToMeeting = async () => {
-    handleAction('Referred', 'Referred to upcoming committee meeting.');
+  // Save the human-reviewed risk summary to Firestore
+  const saveRiskSummary = () => {
+    if (!proposedRiskSummary) return;
+    updateApplication(application.id, { riskSummary: proposedRiskSummary });
+    setProposedRiskSummary(null);
+    toast({ title: "Risk Summary Saved", description: "Environmental risk summary saved to application record." });
+  };
+
+  // Open referral dialog: generate gist for officer review before committing
+  const openReferDialog = async () => {
+    setReferDialogOpen(true);
+    setReferGistLoading(true);
+    setReferGistDraft("");
     try {
       const gistText = await generateMeetingGist({
         projectName: application.projectName,
@@ -326,10 +339,19 @@ export default function ApplicationDetailPage() {
         complianceScore: complianceResult?.overallScore,
         riskLevel: complianceResult?.riskLevel,
       });
-      upsertGist({ applicationId: application.id, generatedText: gistText, editedText: gistText });
+      setReferGistDraft(gistText);
     } catch {
-      toast({ variant: "destructive", title: "Gist Warning", description: "Application referred but gist generation failed." });
+      toast({ variant: "destructive", title: "Warning", description: "Failed to generate meeting brief. You can write one manually." });
+    } finally {
+      setReferGistLoading(false);
     }
+  };
+
+  // Officer confirmed the edited gist — now commit status + save gist
+  const confirmRefer = () => {
+    upsertGist({ applicationId: application.id, generatedText: referGistDraft, editedText: referGistDraft });
+    handleAction('Referred', 'Referred to upcoming committee meeting.');
+    setReferDialogOpen(false);
   };
 
   return (
@@ -371,7 +393,7 @@ export default function ApplicationDetailPage() {
                 <Button variant="outline" onClick={() => setEdsDialogOpen(true)}>
                   <MessageSquare className="mr-2 h-4 w-4" /> Request EDS
                 </Button>
-                <Button onClick={referToMeeting}>Refer to Meeting</Button>
+                <Button onClick={openReferDialog}>Refer to Meeting</Button>
               </>
             )}
             {isMoM && application.status === 'Referred' && (
@@ -731,11 +753,16 @@ export default function ApplicationDetailPage() {
         <TabsContent value="scrutiny" className="mt-6">
           <Card className="border-primary/20 bg-primary/5 dark:bg-primary/10 shadow-sm">
             <CardHeader>
-              <div className="flex items-center gap-2">
-                <Brain className="h-6 w-6 text-primary" />
-                <CardTitle>AI-Powered Scrutiny Assistant</CardTitle>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-6 w-6 text-primary" />
+                  <CardTitle>AI Scrutiny Copilot</CardTitle>
+                </div>
+                <span className="flex items-center gap-1.5 text-xs font-semibold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2.5 py-1 rounded-full border border-amber-200 dark:border-amber-500/30">
+                  <Bot className="h-3 w-3" /> AI Advisory — Human Decision Required
+                </span>
               </div>
-              <CardDescription>Analyze compliance and potential impacts using Gemini AI</CardDescription>
+              <CardDescription>AI analysis to assist the officer — all findings must be reviewed before any action is taken</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
               {!analysisResult ? (
@@ -1011,6 +1038,49 @@ export default function ApplicationDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Human-in-the-loop: Risk Summary editor — only shown when AI has proposed a summary */}
+          {isScrutiny && (proposedRiskSummary !== null || application.riskSummary) && (
+            <Card className="border-amber-300 dark:border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 shadow-sm mt-4">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Save className="h-5 w-5 text-amber-700 dark:text-amber-400" />
+                    <CardTitle className="text-amber-900 dark:text-amber-300">Environmental Risk Summary</CardTitle>
+                  </div>
+                  {proposedRiskSummary !== null && (
+                    <span className="flex items-center gap-1.5 text-xs font-semibold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400 px-2.5 py-1 rounded-full border border-amber-300 dark:border-amber-500/40">
+                      <Bot className="h-3 w-3" /> Review before saving
+                    </span>
+                  )}
+                </div>
+                <CardDescription className="text-amber-700/80 dark:text-amber-400/80">
+                  {proposedRiskSummary !== null
+                    ? "AI has drafted a risk summary — edit if needed, then explicitly save."
+                    : "Saved risk summary for this application."}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 pt-2">
+                <Textarea
+                  value={proposedRiskSummary !== null ? proposedRiskSummary : (application.riskSummary ?? "")}
+                  onChange={(e) => proposedRiskSummary !== null && setProposedRiskSummary(e.target.value)}
+                  readOnly={proposedRiskSummary === null}
+                  className="min-h-[100px] bg-white dark:bg-background border-amber-300 dark:border-amber-500/40"
+                  placeholder="No risk summary yet."
+                />
+                {proposedRiskSummary !== null && (
+                  <div className="flex gap-2">
+                    <Button size="sm" onClick={saveRiskSummary} disabled={!proposedRiskSummary.trim()} className="bg-amber-600 hover:bg-amber-700 text-white">
+                      <Save className="mr-2 h-3.5 w-3.5" /> Save Risk Summary
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={() => setProposedRiskSummary(null)} className="border-amber-400 text-amber-700 hover:bg-amber-50">
+                      Discard
+                    </Button>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
       </AnimatedContainer>
@@ -1070,6 +1140,52 @@ export default function ApplicationDetailPage() {
             <Button variant="outline" onClick={() => setEdsDialogOpen(false)}>Cancel</Button>
             <Button onClick={handleRequestEDS} disabled={!edsComment.trim()}>
               Send EDS Request
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Refer to Meeting Dialog — officer reviews/edits AI gist before committing */}
+      <Dialog open={referDialogOpen} onOpenChange={(open) => { if (!open) setReferDialogOpen(false); }}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Send className="h-5 w-5 text-primary" /> Refer to Committee Meeting
+            </DialogTitle>
+            <DialogDescription>
+              Review and edit the AI-generated meeting brief before referring this application to the committee.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="flex items-center gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 text-amber-700 dark:text-amber-300 text-sm">
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span className="font-medium">AI Advisory — Review before confirming. This will change the application status to &quot;Referred&quot;.</span>
+            </div>
+            {referGistLoading ? (
+              <div className="flex items-center justify-center py-12 gap-3 text-muted-foreground">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <span className="text-sm">Generating meeting brief...</span>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <Label>Meeting Brief (editable)</Label>
+                <Textarea
+                  value={referGistDraft}
+                  onChange={(e) => setReferGistDraft(e.target.value)}
+                  className="min-h-[220px] font-mono text-sm"
+                  placeholder="Describe the key discussion points for the committee meeting..."
+                />
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReferDialogOpen(false)}>Cancel</Button>
+            <Button
+              onClick={confirmRefer}
+              disabled={referGistLoading || !referGistDraft.trim()}
+              className="bg-primary"
+            >
+              <Send className="mr-2 h-4 w-4" /> Confirm & Refer to Meeting
             </Button>
           </DialogFooter>
         </DialogContent>
