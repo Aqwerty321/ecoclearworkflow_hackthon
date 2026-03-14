@@ -98,6 +98,8 @@ export interface ScrutinyAnalysisResponse {
   recommendations: string[];
   requires_eds: boolean;
   agent_trace: string[];
+  reflector_quality_score?: number;
+  reflector_adjustments: string[];
 }
 
 export async function runScrutinyAnalysis(
