@@ -49,7 +49,7 @@ const generateMeetingGistFlow = ai.defineFlow(
     outputSchema: GenerateMeetingGistOutputSchema,
   },
   async (input) => {
-    const { output } = await ai.generate({
+    const result = await ai.generate({
       model: 'googleai/gemini-2.5-flash',
       prompt: `You are a senior environmental appraisal officer at the Chhattisgarh Environment Conservation Board (CECB).
 
@@ -85,14 +85,14 @@ DRAFT RECOMMENDATION (STARTING POINT)
 [Suggest one of: "Grant EC with conditions" / "Defer pending EDS response" / "Reject due to critical non-compliance" — with a 1-sentence rationale. The committee will decide the final outcome.]
 
 Keep each section concise. Total length: 300–450 words. Do not add extra commentary outside these sections.`,
-      output: { schema: GenerateMeetingGistOutputSchema },
       config: { temperature: 0.2 },
     });
 
-    if (!output) {
+    const text = result.text;
+    if (!text) {
       throw new Error('AI failed to generate meeting gist. Please retry.');
     }
 
-    return output;
+    return text;
   }
 );

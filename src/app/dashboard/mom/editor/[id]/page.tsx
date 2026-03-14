@@ -174,7 +174,7 @@ export default function MoMEditorPage() {
       committeeDecision: editedDecision,
       conditions: editedConditions,
     });
-    updateApplicationStatus(application.id, 'MoMGenerated');
+    if (application.status !== 'MoMGenerated') updateApplicationStatus(application.id, 'MoMGenerated');
     // Update finalMoM to reflect approved edits
     setFinalMoM({ discussionSummary: editedSummary, committeeDecision: editedDecision, conditions: editedConditions });
     setMomSaved(true);
