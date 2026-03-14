@@ -3,14 +3,19 @@
 /**
  * MarkdownContent — renders AI-generated markdown text with GFM support.
  *
+ * Uses `marked` (CJS-compatible) instead of `react-markdown` (ESM-only)
+ * to avoid Next.js webpack bundling issues.
+ *
  * Usage:
  *   <MarkdownContent>{someAiString}</MarkdownContent>
  *   <MarkdownContent className="text-xs">{someAiString}</MarkdownContent>
  */
 
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { marked } from "marked";
 import { cn } from "@/lib/utils";
+
+// Configure marked once with GFM and line-break support
+marked.setOptions({ gfm: true, breaks: true });
 
 interface MarkdownContentProps {
   children: string | null | undefined;
@@ -20,6 +25,8 @@ interface MarkdownContentProps {
 
 export function MarkdownContent({ children, className }: MarkdownContentProps) {
   if (!children) return null;
+
+  const html = marked.parse(children) as string;
 
   return (
     <div
@@ -44,8 +51,7 @@ export function MarkdownContent({ children, className }: MarkdownContentProps) {
         "[&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1",
         className
       )}
-    >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{children}</ReactMarkdown>
-    </div>
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
   );
 }
