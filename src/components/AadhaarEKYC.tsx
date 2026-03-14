@@ -3,17 +3,18 @@
 /**
  * AadhaarEKYC Component — Aadhaar-based electronic KYC verification.
  *
- * Implements the India Stack e-KYC flow for verifying Project Proponent
- * and RQP identities. Phone OTP is delivered via Firebase Authentication
- * (real SMS to the user's mobile phone). The Aadhaar number is collected
- * as an identity reference and stored in masked form only.
+ * Two modes, togglable at runtime:
  *
- * Flow:
- *   1. User enters 12-digit Aadhaar number
- *   2. User enters mobile number (Aadhaar-linked)
- *   3. Invisible reCAPTCHA is solved (automatic)
- *   4. Firebase sends a real SMS OTP to the mobile number
- *   5. User enters OTP → Firebase confirms → eKYC marked verified
+ *  DEMO MODE (default) — instant verification, no SMS, no Firebase quota.
+ *    Shows the full form flow but bypasses real OTP. Safe for repeated demos
+ *    on the same phone. Pre-filled with sample values to speed up presentations.
+ *
+ *  LIVE MODE — real Firebase Phone Auth. Sends actual SMS OTP to the mobile
+ *    number entered. Use this when you want to impress a judge with a real
+ *    phone ping. Switch back to Demo Mode between sessions to avoid rate limits.
+ *
+ * Mode is persisted in sessionStorage so it survives page navigations within
+ * the same browser tab but resets on a fresh tab (intentional for demos).
  */
 
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -29,6 +30,8 @@ import {
   Fingerprint,
   Phone,
   UserCheck,
+  Zap,
+  Radio,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { auth } from "@/lib/firebase";
@@ -38,53 +41,79 @@ import {
   type ConfirmationResult,
 } from "firebase/auth";
 
+// ── Types ─────────────────────────────────────────────────────────────
+
 export interface EKYCIdentity {
   name: string;
   maskedAadhaar: string;
   phone: string;
   verifiedAt: string;
+  /** Whether this was verified via real SMS OTP or demo bypass */
+  verificationMode: "demo" | "live";
 }
 
 export type EKYCStatus = "pending" | "otp_sent" | "verified" | "failed";
+type VerificationMode = "demo" | "live";
 
 interface AadhaarEKYCProps {
-  /** Called when verification completes successfully */
   onVerified?: (identity: EKYCIdentity) => void;
-  /** Whether the component is in compact mode */
   compact?: boolean;
-  /** Additional CSS class */
   className?: string;
-  /** Display name of the logged-in user */
   userName?: string;
 }
 
+// Pre-filled demo values — saves time during presentations
+const DEMO_AADHAAR = "999988887777";
+const DEMO_PHONE   = "9876543210";
+
+// ── Component ─────────────────────────────────────────────────────────
+
 export function AadhaarEKYC({ onVerified, compact = false, className, userName }: AadhaarEKYCProps) {
-  const [aadhaarNumber, setAadhaarNumber] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [otp, setOtp] = useState("");
-  const [status, setStatus] = useState<EKYCStatus>("pending");
-  const [identity, setIdentity] = useState<EKYCIdentity | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [consent, setConsent] = useState(false);
+  // Restore mode from sessionStorage so it survives navigations within a tab
+  const [mode, setMode] = useState<VerificationMode>(() => {
+    if (typeof window === "undefined") return "demo";
+    return (sessionStorage.getItem("ekyc_mode") as VerificationMode) ?? "demo";
+  });
+
+  const [aadhaarNumber, setAadhaarNumber] = useState(DEMO_AADHAAR);
+  const [phoneNumber, setPhoneNumber]     = useState(DEMO_PHONE);
+  const [otp, setOtp]                     = useState("");
+  const [status, setStatus]               = useState<EKYCStatus>("pending");
+  const [identity, setIdentity]           = useState<EKYCIdentity | null>(null);
+  const [error, setError]                 = useState<string | null>(null);
+  const [loading, setLoading]             = useState(false);
+  const [consent, setConsent]             = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
-  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const cooldownRef           = useRef<ReturnType<typeof setInterval> | null>(null);
   const confirmationResultRef = useRef<ConfirmationResult | null>(null);
-  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+  const recaptchaVerifierRef  = useRef<RecaptchaVerifier | null>(null);
 
-  // Determine if Firebase Phone Auth is available
   const firebaseAvailable = !!auth;
 
-  // Start 60s cooldown timer
-  const startCooldown = useCallback(() => {
-    setResendCooldown(60);
+  // Persist mode to sessionStorage and reset form state
+  const switchMode = useCallback((next: VerificationMode) => {
+    if (typeof window !== "undefined") sessionStorage.setItem("ekyc_mode", next);
+    setMode(next);
+    setStatus("pending");
+    setOtp("");
+    setError(null);
+    setResendCooldown(0);
+    if (next === "demo") {
+      setAadhaarNumber(DEMO_AADHAAR);
+      setPhoneNumber(DEMO_PHONE);
+    } else {
+      setAadhaarNumber("");
+      setPhoneNumber("");
+    }
+  }, []);
+
+  // Countdown timer
+  const startCooldown = useCallback((seconds = 60) => {
+    setResendCooldown(seconds);
     cooldownRef.current = setInterval(() => {
       setResendCooldown(prev => {
-        if (prev <= 1) {
-          clearInterval(cooldownRef.current!);
-          return 0;
-        }
+        if (prev <= 1) { clearInterval(cooldownRef.current!); return 0; }
         return prev - 1;
       });
     }, 1000);
@@ -93,7 +122,6 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
   useEffect(() => {
     return () => {
       if (cooldownRef.current) clearInterval(cooldownRef.current);
-      // Clean up reCAPTCHA on unmount
       if (recaptchaVerifierRef.current) {
         try { recaptchaVerifierRef.current.clear(); } catch { /* ignore */ }
         recaptchaVerifierRef.current = null;
@@ -101,144 +129,148 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
     };
   }, []);
 
-  // Format Aadhaar with spaces: XXXX XXXX XXXX
+  // ── Helpers ──────────────────────────────────────────────────────────
+
   const formatAadhaar = (val: string) => {
-    const digits = val.replace(/\D/g, "").slice(0, 12);
-    return digits.replace(/(\d{4})(?=\d)/g, "$1 ");
+    const d = val.replace(/\D/g, "").slice(0, 12);
+    return d.replace(/(\d{4})(?=\d)/g, "$1 ");
   };
 
-  // Format phone number display
-  const formatPhone = (val: string) => {
-    const digits = val.replace(/\D/g, "").slice(0, 10);
-    return digits;
-  };
+  const isValidPhone = (p: string) => /^\d{10}$/.test(p);
+  const getE164      = (p: string) => `+91${p}`;
 
-  // Validate phone number (10-digit Indian number)
-  const isValidPhone = (phone: string) => /^\d{10}$/.test(phone);
+  // ── DEMO path: instant verify ─────────────────────────────────────────
 
-  const getE164Phone = (phone: string) => `+91${phone}`;
+  const handleDemoVerify = useCallback(async () => {
+    setError(null);
+    setLoading(true);
+    // Brief delay so it feels like processing
+    await new Promise(r => setTimeout(r, 900));
+    const digits = aadhaarNumber.replace(/\D/g, "");
+    const maskedAadhaar = `XXXX-XXXX-${digits.slice(-4) || "7777"}`;
+    const verified: EKYCIdentity = {
+      name: userName || "Demo User",
+      maskedAadhaar,
+      phone: getE164(phoneNumber || DEMO_PHONE),
+      verifiedAt: new Date().toISOString(),
+      verificationMode: "demo",
+    };
+    setIdentity(verified);
+    setStatus("verified");
+    onVerified?.(verified);
+    setLoading(false);
+  }, [aadhaarNumber, phoneNumber, userName, onVerified]);
+
+  // ── LIVE path: send real SMS OTP ──────────────────────────────────────
 
   const handleSendOTP = useCallback(async () => {
     setError(null);
     setLoading(true);
-
-    if (!firebaseAvailable) {
-      // Fallback demo mode when Firebase is not configured
-      await new Promise(r => setTimeout(r, 800));
-      confirmationResultRef.current = null;
-      setStatus("otp_sent");
-      startCooldown();
-      setLoading(false);
-      return;
-    }
-
     try {
-      // Create or reuse an invisible reCAPTCHA verifier
       if (!recaptchaVerifierRef.current) {
         recaptchaVerifierRef.current = new RecaptchaVerifier(
           auth!,
           "recaptcha-container",
-          { size: "invisible", callback: () => { /* auto */ } }
+          { size: "invisible" }
         );
       }
-
-      const e164 = getE164Phone(phoneNumber);
-      const confirmationResult = await signInWithPhoneNumber(
-        auth!,
-        e164,
-        recaptchaVerifierRef.current
-      );
-      confirmationResultRef.current = confirmationResult;
+      const result = await signInWithPhoneNumber(auth!, getE164(phoneNumber), recaptchaVerifierRef.current);
+      confirmationResultRef.current = result;
       setStatus("otp_sent");
-      startCooldown();
+      startCooldown(60);
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? "";
-      let message = "Failed to send OTP. Please try again.";
-      if (code === "auth/invalid-phone-number") {
-        message = "Invalid phone number. Enter a valid 10-digit Indian mobile number.";
-      } else if (code === "auth/too-many-requests") {
-        message = "Too many requests. Please wait a few minutes before trying again.";
-      } else if (code === "auth/quota-exceeded") {
-        message = "SMS quota exceeded. Please try again later.";
-      } else if (code === "auth/captcha-check-failed") {
-        message = "reCAPTCHA verification failed. Please refresh the page and try again.";
-        // Clear the verifier so it regenerates next time
+      let msg = "Failed to send OTP. Please try again.";
+      if (code === "auth/invalid-phone-number")  msg = "Invalid phone number. Enter a valid 10-digit Indian mobile number.";
+      if (code === "auth/too-many-requests")      msg = "Too many attempts — Firebase rate limit hit. Switch to Demo Mode to continue.";
+      if (code === "auth/quota-exceeded")         msg = "SMS quota exceeded. Switch to Demo Mode to continue without limits.";
+      if (code === "auth/captcha-check-failed") {
+        msg = "reCAPTCHA failed. Please refresh and try again.";
         if (recaptchaVerifierRef.current) {
           try { recaptchaVerifierRef.current.clear(); } catch { /* ignore */ }
           recaptchaVerifierRef.current = null;
         }
       }
-      setError(message);
+      setError(msg);
     } finally {
       setLoading(false);
     }
-  }, [firebaseAvailable, phoneNumber, startCooldown]);
+  }, [phoneNumber, startCooldown]);
 
-  const handleVerify = useCallback(async () => {
+  // ── LIVE path: confirm OTP ────────────────────────────────────────────
+
+  const handleConfirmOTP = useCallback(async () => {
     setError(null);
     setLoading(true);
-
     try {
-      let verified = false;
-
-      if (confirmationResultRef.current) {
-        // Real Firebase phone auth verification
-        await confirmationResultRef.current.confirm(otp);
-        verified = true;
-      } else {
-        // Demo mode fallback — accept any 6-digit OTP
-        if (/^\d{6}$/.test(otp)) {
-          verified = true;
-        } else {
-          setError("Invalid OTP. Please enter the 6-digit code.");
-          setLoading(false);
-          return;
-        }
-      }
-
-      if (verified) {
-        const maskedAadhaar = `XXXX-XXXX-${aadhaarNumber.slice(-4)}`;
-        const verifiedIdentity: EKYCIdentity = {
-          name: userName || "Verified User",
-          maskedAadhaar,
-          phone: getE164Phone(phoneNumber),
-          verifiedAt: new Date().toISOString(),
-        };
-        setIdentity(verifiedIdentity);
-        setStatus("verified");
-        onVerified?.(verifiedIdentity);
-      }
+      await confirmationResultRef.current!.confirm(otp);
+      const digits = aadhaarNumber.replace(/\D/g, "");
+      const maskedAadhaar = `XXXX-XXXX-${digits.slice(-4)}`;
+      const verified: EKYCIdentity = {
+        name: userName || "Verified User",
+        maskedAadhaar,
+        phone: getE164(phoneNumber),
+        verifiedAt: new Date().toISOString(),
+        verificationMode: "live",
+      };
+      setIdentity(verified);
+      setStatus("verified");
+      onVerified?.(verified);
     } catch (err: unknown) {
       const code = (err as { code?: string })?.code ?? "";
-      let message = "Verification failed. Please try again.";
-      if (code === "auth/invalid-verification-code") {
-        message = "Incorrect OTP. Please check the code and try again.";
-      } else if (code === "auth/code-expired") {
-        message = "OTP has expired. Please request a new one.";
-      }
-      setError(message);
+      let msg = "Verification failed.";
+      if (code === "auth/invalid-verification-code") msg = "Incorrect OTP. Please check and retry.";
+      if (code === "auth/code-expired")               msg = "OTP has expired. Please request a new one.";
+      setError(msg);
       setStatus("failed");
     } finally {
       setLoading(false);
     }
   }, [otp, aadhaarNumber, phoneNumber, userName, onVerified]);
 
-  // ── Verified state ──────────────────────────────────────────────────
+  // ── Verified card ─────────────────────────────────────────────────────
+
   if (status === "verified" && identity) {
+    const isDemo = identity.verificationMode === "demo";
     return (
-      <Card className={cn("border-green-200 dark:border-green-500/30", className)}>
+      <Card className={cn(
+        isDemo ? "border-blue-200 dark:border-blue-500/30" : "border-green-200 dark:border-green-500/30",
+        className
+      )}>
         <CardContent className="pt-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-green-100 dark:bg-green-500/20 flex items-center justify-center">
-              <UserCheck className="h-5 w-5 text-green-600 dark:text-green-400" />
+            <div className={cn(
+              "w-10 h-10 rounded-full flex items-center justify-center",
+              isDemo ? "bg-blue-100 dark:bg-blue-500/20" : "bg-green-100 dark:bg-green-500/20"
+            )}>
+              <UserCheck className={cn(
+                "h-5 w-5",
+                isDemo ? "text-blue-600 dark:text-blue-400" : "text-green-600 dark:text-green-400"
+              )} />
             </div>
             <div>
-              <p className="font-semibold text-green-700 dark:text-green-300">Identity Verified</p>
+              <div className="flex items-center gap-2">
+                <p className={cn(
+                  "font-semibold",
+                  isDemo ? "text-blue-700 dark:text-blue-300" : "text-green-700 dark:text-green-300"
+                )}>
+                  Identity Verified
+                </p>
+                <span className={cn(
+                  "text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider",
+                  isDemo
+                    ? "bg-blue-100 dark:bg-blue-500/20 text-blue-700 dark:text-blue-300"
+                    : "bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300"
+                )}>
+                  {isDemo ? "Demo" : "Live"}
+                </span>
+              </div>
               <p className="text-xs text-muted-foreground">
-                {firebaseAvailable ? "Phone OTP verified via Firebase" : "Demo mode verification"}
+                {isDemo ? "Instant demo verification" : "Real SMS OTP confirmed via Firebase"}
               </p>
             </div>
           </div>
+
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div>
               <p className="text-muted-foreground text-xs">Name</p>
@@ -257,37 +289,103 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
               <p className="text-xs">{new Date(identity.verifiedAt).toLocaleString()}</p>
             </div>
           </div>
-          <div className="mt-3 flex items-center gap-1 text-xs text-green-600 dark:text-green-400">
+
+          <div className={cn(
+            "mt-3 flex items-center gap-1 text-xs",
+            isDemo ? "text-blue-600 dark:text-blue-400" : "text-green-600 dark:text-green-400"
+          )}>
             <CheckCircle2 className="h-3 w-3" />
-            {firebaseAvailable
-              ? "Phone number verified — real SMS OTP confirmed"
-              : "Demo verification complete"}
+            {isDemo
+              ? "Demo mode — instant pre-verification for presentation"
+              : "Live mode — Aadhaar eKYC confirmed via real SMS OTP"}
           </div>
         </CardContent>
       </Card>
     );
   }
 
-  // ── Main form ──────────────────────────────────────────────────────
+  // ── Main form ─────────────────────────────────────────────────────────
+
+  const isDemoMode = mode === "demo";
+
   return (
     <Card className={cn("border-border/50", className)}>
-      {/* Invisible reCAPTCHA container — must stay in DOM */}
+      {/* Invisible reCAPTCHA anchor (must stay in DOM for Live mode) */}
       <div id="recaptcha-container" />
 
       <CardHeader className={compact ? "pb-3" : undefined}>
-        <div className="flex items-center gap-2">
-          <Fingerprint className="h-5 w-5 text-primary" />
-          <CardTitle className="text-lg">Aadhaar e-KYC Verification</CardTitle>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Fingerprint className="h-5 w-5 text-primary" />
+            <CardTitle className="text-lg">Aadhaar e-KYC Verification</CardTitle>
+          </div>
+
+          {/* Demo / Live toggle — always visible */}
+          <div className="flex items-center gap-0.5 p-0.5 bg-muted rounded-lg text-xs font-semibold">
+            <button
+              type="button"
+              onClick={() => switchMode("demo")}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1 rounded-md transition-all",
+                isDemoMode
+                  ? "bg-background shadow text-blue-600 dark:text-blue-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              <Zap className="h-3 w-3" />
+              Demo
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode("live")}
+              className={cn(
+                "flex items-center gap-1 px-2.5 py-1 rounded-md transition-all",
+                !isDemoMode
+                  ? "bg-background shadow text-green-600 dark:text-green-400"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+              disabled={!firebaseAvailable}
+              title={!firebaseAvailable ? "Firebase not configured" : undefined}
+            >
+              <Radio className="h-3 w-3" />
+              Live OTP
+            </button>
+          </div>
         </div>
+
         {!compact && (
           <CardDescription>
-            Verify your identity using your Aadhaar number and mobile OTP
+            {isDemoMode
+              ? "Demo mode — instant verification, no SMS. Toggle to Live OTP to send a real SMS when presenting to judges."
+              : "Live mode — a real SMS OTP will be sent. Switch back to Demo Mode between repeated sessions to avoid rate limits."}
           </CardDescription>
         )}
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Step 1: Aadhaar Number */}
+
+        {/* Mode banners */}
+        {isDemoMode && (
+          <div className="flex items-start gap-2 text-xs bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-700 dark:text-blue-300 rounded-lg px-3 py-2">
+            <Zap className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              <strong>Demo Mode:</strong> Pre-filled with sample Aadhaar + phone. Hit{" "}
+              <strong>Instant Verify</strong> to proceed — no SMS sent, no rate limits, works unlimited times.
+            </span>
+          </div>
+        )}
+
+        {!isDemoMode && (
+          <div className="flex items-start gap-2 text-xs bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 text-green-700 dark:text-green-300 rounded-lg px-3 py-2">
+            <Radio className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+            <span>
+              <strong>Live OTP Mode:</strong> Real SMS will be sent. Firebase limits ~5 SMS / 10 min to the same
+              number — switch to <strong>Demo Mode</strong> between repeated demos to avoid hitting the limit.
+            </span>
+          </div>
+        )}
+
+        {/* Aadhaar Number */}
         <div className="space-y-2">
           <Label htmlFor="aadhaar">Aadhaar Number</Label>
           <Input
@@ -301,7 +399,7 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
           />
         </div>
 
-        {/* Step 1b: Phone Number (new field) */}
+        {/* Phone Number */}
         <div className="space-y-2">
           <Label htmlFor="phone">
             Mobile Number{" "}
@@ -314,47 +412,52 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
             <Input
               id="phone"
               placeholder="9876543210"
-              value={formatPhone(phoneNumber)}
-              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, ""))}
+              value={phoneNumber}
+              onChange={(e) => setPhoneNumber(e.target.value.replace(/\D/g, "").slice(0, 10))}
               maxLength={10}
               disabled={status === "otp_sent" || loading}
               className="font-mono"
               inputMode="numeric"
             />
-            {status === "pending" && (
+
+            {/* LIVE: Send OTP button */}
+            {!isDemoMode && status === "pending" && (
               <Button
                 onClick={handleSendOTP}
                 disabled={
-                  aadhaarNumber.length !== 12 ||
+                  aadhaarNumber.replace(/\D/g, "").length !== 12 ||
                   !isValidPhone(phoneNumber) ||
                   loading
                 }
                 size="sm"
                 className="gap-1 whitespace-nowrap"
               >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Phone className="h-4 w-4" />
-                )}
+                {loading
+                  ? <Loader2 className="h-4 w-4 animate-spin" />
+                  : <Phone className="h-4 w-4" />}
                 Send OTP
               </Button>
             )}
           </div>
-          {status === "pending" && !firebaseAvailable && (
-            <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">
-              Demo mode: Firebase not configured — any OTP will be accepted
-            </p>
-          )}
-          {status === "pending" && firebaseAvailable && (
-            <p className="text-xs text-muted-foreground">
-              A real SMS OTP will be sent to this number via Firebase Authentication
-            </p>
-          )}
         </div>
 
-        {/* Step 2: OTP Verification */}
-        {status === "otp_sent" && (
+        {/* DEMO: single instant-verify button */}
+        {isDemoMode && status === "pending" && (
+          <Button
+            onClick={handleDemoVerify}
+            disabled={aadhaarNumber.replace(/\D/g, "").length !== 12 || loading}
+            className="w-full gap-2"
+          >
+            {loading ? (
+              <><Loader2 className="h-4 w-4 animate-spin" /> Verifying...</>
+            ) : (
+              <><Zap className="h-4 w-4" /> Instant Verify (Demo)</>
+            )}
+          </Button>
+        )}
+
+        {/* LIVE: OTP input + confirm */}
+        {!isDemoMode && status === "otp_sent" && (
           <>
             <div className="space-y-2">
               <Label htmlFor="otp">Enter OTP</Label>
@@ -370,9 +473,7 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
                 autoComplete="one-time-code"
               />
               <p className="text-xs text-muted-foreground">
-                {firebaseAvailable
-                  ? `OTP sent to +91 ${phoneNumber} via SMS`
-                  : "Demo mode: enter any 6-digit code (e.g. 123456)"}
+                OTP sent to +91 {phoneNumber}
               </p>
               <button
                 type="button"
@@ -380,11 +481,10 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
                 disabled={resendCooldown > 0 || loading}
                 className="text-xs text-primary disabled:text-muted-foreground underline-offset-2 hover:underline disabled:no-underline transition-colors"
               >
-                {resendCooldown > 0 ? `Resend OTP in ${resendCooldown}s` : "Resend OTP"}
+                {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend OTP"}
               </button>
             </div>
 
-            {/* Consent */}
             <label className="flex items-start gap-2 text-sm cursor-pointer">
               <input
                 type="checkbox"
@@ -393,14 +493,13 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
                 className="mt-0.5 rounded"
               />
               <span className="text-muted-foreground">
-                I authorize CECB to verify my identity via Aadhaar e-KYC as per UIDAI guidelines.
-                I understand my phone number and Aadhaar (masked) will be stored solely for
-                identity verification.
+                I authorize CECB to verify my identity via Aadhaar e-KYC. My phone number
+                and masked Aadhaar will be stored solely for identity verification.
               </span>
             </label>
 
             <Button
-              onClick={handleVerify}
+              onClick={handleConfirmOTP}
               disabled={otp.length !== 6 || !consent || loading}
               className="w-full gap-2"
             >
@@ -413,23 +512,19 @@ export function AadhaarEKYC({ onVerified, compact = false, className, userName }
           </>
         )}
 
-        {/* Error display */}
+        {/* Error */}
         {error && (
-          <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 p-3 rounded-lg">
-            <AlertTriangle className="h-4 w-4 shrink-0" />
-            {error}
+          <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 p-3 rounded-lg">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>{error}</span>
           </div>
         )}
 
-        {/* Failed state */}
+        {/* Failed: retry */}
         {status === "failed" && (
           <Button
             variant="outline"
-            onClick={() => {
-              setStatus("otp_sent");
-              setOtp("");
-              setError(null);
-            }}
+            onClick={() => { setStatus("otp_sent"); setOtp(""); setError(null); }}
             className="w-full"
           >
             Try Again
