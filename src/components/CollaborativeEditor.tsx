@@ -92,12 +92,91 @@ export function CollaborativeEditor({
   const [synced, setSynced] = useState(false);
   const [serverMode, setServerMode] = useState(false);
 
-  // Detect Hocuspocus server availability
-  // Default URL from env var, prop override, or skip
-  const wsUrl = hocuspocusUrl || (typeof window !== "undefined" ? (process.env.NEXT_PUBLIC_COLLAB_WS_URL || "") : "");
+  // ── Runtime discovery of the Hocuspocus WebSocket URL ──────────────────
+  // We cannot use a build-time env var because the Cloudflare tunnel URL
+  // changes every time the tunnel restarts. Instead:
+  //   1. At mount, fetch NEXT_PUBLIC_COLLAB_DISCOVERY_URL/backend-url
+  //   2. Fall back to NEXT_PUBLIC_COLLAB_WS_URL (static, useful in dev)
+  //   3. Fall back to "" → WebRTC P2P
+  // We delay provider creation (wsUrlLoading=true) until the URL is known,
+  // so the useMemo below fires exactly once with the correct value.
+  const [wsUrl, setWsUrl] = useState<string>(() => {
+    // Prop always wins (passed explicitly by a caller that already knows the URL)
+    if (hocuspocusUrl) return hocuspocusUrl;
+    return ""; // will be resolved in the useEffect below
+  });
+  const [wsUrlLoading, setWsUrlLoading] = useState<boolean>(!hocuspocusUrl);
 
-  // Create Yjs document and providers
+  useEffect(() => {
+    // If the caller passed hocuspocusUrl directly, no discovery needed
+    if (hocuspocusUrl) {
+      setWsUrl(hocuspocusUrl);
+      setWsUrlLoading(false);
+      return;
+    }
+
+    const discoveryBase =
+      typeof window !== "undefined"
+        ? (process.env.NEXT_PUBLIC_COLLAB_DISCOVERY_URL || "").trim()
+        : "";
+
+    const staticWsUrl =
+      typeof window !== "undefined"
+        ? (process.env.NEXT_PUBLIC_COLLAB_WS_URL || "").trim()
+        : "";
+
+    if (!discoveryBase) {
+      // No discovery server configured — use static env var or WebRTC
+      setWsUrl(staticWsUrl);
+      setWsUrlLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5s timeout
+
+    fetch(`${discoveryBase}/backend-url`, { signal: controller.signal })
+      .then((res) => {
+        if (!res.ok) throw new Error(`Discovery server returned ${res.status}`);
+        return res.json() as Promise<{ ws_url: string }>;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        if (data.ws_url) {
+          setWsUrl(data.ws_url);
+        } else {
+          // Unexpected response shape — fall back
+          setWsUrl(staticWsUrl);
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // Discovery failed (network error, timeout, server not running) — fall back
+        setWsUrl(staticWsUrl);
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+        if (!cancelled) setWsUrlLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+      clearTimeout(timeoutId);
+    };
+    // hocuspocusUrl is in deps so if parent passes it later it gets picked up
+  }, [hocuspocusUrl]);
+
+  // Create Yjs document and providers — deferred until wsUrl is resolved
   const { ydoc, provider, indexeddbProvider } = useMemo(() => {
+    // wsUrlLoading guard: return dummy objects while URL is being fetched.
+    // This memo re-runs once wsUrlLoading flips to false (wsUrl is final).
+    if (wsUrlLoading) {
+      // Return placeholders — the component renders a skeleton instead
+      return { ydoc: null as unknown as Y.Doc, provider: null as unknown as WebrtcProvider, indexeddbProvider: null as unknown as IndexeddbPersistence };
+    }
+
     const doc = new Y.Doc();
 
     let syncProvider: WebrtcProvider | HocuspocusProvider;
@@ -121,15 +200,16 @@ export function CollaborativeEditor({
     const idbProvider = new IndexeddbPersistence(`ecoclear-mom-${documentId}`, doc);
 
     return { ydoc: doc, provider: syncProvider, indexeddbProvider: idbProvider };
-  }, [documentId, wsUrl, hocuspocusToken]);
+  }, [documentId, wsUrl, wsUrlLoading, hocuspocusToken]);
 
   // Update server mode state when wsUrl changes (must be in useEffect, not useMemo)
   useEffect(() => {
-    setServerMode(!!wsUrl);
-  }, [wsUrl]);
+    if (!wsUrlLoading) setServerMode(!!wsUrl);
+  }, [wsUrl, wsUrlLoading]);
 
   // Track peer connections
   useEffect(() => {
+    if (wsUrlLoading || !provider) return;
     const awareness = provider.awareness;
     if (!awareness) {
       setSynced(true);
@@ -154,7 +234,7 @@ export function CollaborativeEditor({
       indexeddbProvider.destroy();
       ydoc.destroy();
     };
-  }, [provider, indexeddbProvider, ydoc]);
+  }, [provider, indexeddbProvider, ydoc, wsUrlLoading]);
 
   // Pick a random color for this user's cursor
   const cursorColor = useMemo(
@@ -210,6 +290,21 @@ export function CollaborativeEditor({
   }, [editor, initialContent, synced]);
 
   if (!editor) return null;
+
+  // Show a minimal skeleton while the discovery fetch is in-flight (~100ms).
+  // This prevents the useMemo from firing prematurely with an empty wsUrl.
+  if (wsUrlLoading) {
+    return (
+      <div className={cn("border rounded-lg overflow-hidden animate-pulse", className)}>
+        <div className="h-10 bg-muted/30 border-b" />
+        <div className="min-h-[300px] p-4 bg-background">
+          <div className="h-4 bg-muted rounded w-3/4 mb-3" />
+          <div className="h-4 bg-muted rounded w-1/2 mb-3" />
+          <div className="h-4 bg-muted rounded w-5/6" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("border rounded-lg overflow-hidden", className)}>
