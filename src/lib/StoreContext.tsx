@@ -148,6 +148,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [useFirebase]);
 
   // ---- Firebase real-time listeners ----
+  // We must wait for onAuthStateChanged to confirm a logged-in user before
+  // attaching Firestore onSnapshot listeners, because all Firestore rules
+  // require isAuthenticated(). Attaching them before auth is ready causes
+  // transient permission-denied errors on every collection.
   useEffect(() => {
     if (!useFirebase) {
       loadLocal();
@@ -161,95 +165,104 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const fbDb = db!;
     const fbAuth = auth!;
 
-    // Listen to applications
-    unsubscribers.push(
-      onSnapshot(collection(fbDb, APPLICATIONS), (snap) => {
-        const apps = snap.docs.map(d => ({ id: d.id, ...d.data() } as Application));
-        setData(prev => ({ ...prev, applications: apps }));
-      })
-    );
+    /** Attach all collection snapshot listeners (called once auth confirms a user). */
+    function attachCollectionListeners(uid: string) {
+      // Generic error handler — prevents uncaught errors in console
+      const onError = (err: Error) => {
+        console.warn('[EcoClear] Firestore listener error:', err.message);
+      };
 
-    // Listen to documents
-    unsubscribers.push(
-      onSnapshot(collection(db!, DOCUMENTS), (snap) => {
-        const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Document));
-        setData(prev => ({ ...prev, documents: docs }));
-      })
-    );
+      // Listen to applications
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, APPLICATIONS), (snap) => {
+          const apps = snap.docs.map(d => ({ id: d.id, ...d.data() } as Application));
+          setData(prev => ({ ...prev, applications: apps }));
+        }, onError)
+      );
 
-    // Listen to sectors
-    unsubscribers.push(
-      onSnapshot(collection(db!, SECTORS), (snap) => {
-        const sectors = snap.docs.map(d => ({ id: d.id, ...d.data() } as Sector));
-        setData(prev => ({ ...prev, sectors: sectors.length > 0 ? sectors : INITIAL_SECTORS }));
-      })
-    );
+      // Listen to documents
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, DOCUMENTS), (snap) => {
+          const docs = snap.docs.map(d => ({ id: d.id, ...d.data() } as Document));
+          setData(prev => ({ ...prev, documents: docs }));
+        }, onError)
+      );
 
-    // Listen to users
-    unsubscribers.push(
-      onSnapshot(collection(db!, USERS), (snap) => {
-        const users = snap.docs.map(d => ({ id: d.id, ...d.data() } as User));
-        setData(prev => ({ ...prev, users: users.length > 0 ? users : INITIAL_USERS }));
-      })
-    );
+      // Listen to sectors
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, SECTORS), (snap) => {
+          const sectors = snap.docs.map(d => ({ id: d.id, ...d.data() } as Sector));
+          setData(prev => ({ ...prev, sectors: sectors.length > 0 ? sectors : INITIAL_SECTORS }));
+        }, onError)
+      );
 
-    // Listen to comments
-    unsubscribers.push(
-      onSnapshot(collection(db!, COMMENTS), (snap) => {
-        const comments = snap.docs.map(d => ({ id: d.id, ...d.data() } as EDSComment));
-        setData(prev => ({ ...prev, comments }));
-      })
-    );
+      // Listen to users
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, USERS), (snap) => {
+          const users = snap.docs.map(d => ({ id: d.id, ...d.data() } as User));
+          setData(prev => ({ ...prev, users: users.length > 0 ? users : INITIAL_USERS }));
+        }, onError)
+      );
 
-    // Listen to gists
-    unsubscribers.push(
-      onSnapshot(collection(db!, GISTS), (snap) => {
-        const gists = snap.docs.map(d => ({ ...d.data() } as MeetingGist));
-        setData(prev => ({ ...prev, gists }));
-      })
-    );
+      // Listen to comments
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, COMMENTS), (snap) => {
+          const comments = snap.docs.map(d => ({ id: d.id, ...d.data() } as EDSComment));
+          setData(prev => ({ ...prev, comments }));
+        }, onError)
+      );
 
-    // Listen to templates
-    unsubscribers.push(
-      onSnapshot(collection(db!, TEMPLATES), (snap) => {
-        const templates = snap.docs.map(d => ({ id: d.id, ...d.data() } as Template));
-        setData(prev => ({ ...prev, templates }));
-      })
-    );
+      // Listen to gists
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, GISTS), (snap) => {
+          const gists = snap.docs.map(d => ({ ...d.data() } as MeetingGist));
+          setData(prev => ({ ...prev, gists }));
+        }, onError)
+      );
 
-    // Listen to minutes of meeting
-    unsubscribers.push(
-      onSnapshot(collection(db!, MINUTES), (snap) => {
-        const minutesList = snap.docs.map(d => ({ id: d.id, ...d.data() } as MinutesOfMeeting));
-        setData(prev => ({ ...prev, minutes: minutesList }));
-      })
-    );
+      // Listen to templates
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, TEMPLATES), (snap) => {
+          const templates = snap.docs.map(d => ({ id: d.id, ...d.data() } as Template));
+          setData(prev => ({ ...prev, templates }));
+        }, onError)
+      );
 
-    // Listen to payments — filtered by the current user's uid so the
-    // rule (resource.data.userId == request.auth.uid || isAdmin()) is
-    // satisfied for ALL documents returned, preventing permission-denied.
-    // Admins also only see their own payments here; cross-user payment
-    // lookup happens per-application in the detail view (getDoc).
-    const paymentsQuery = fbAuth.currentUser
-      ? query(collection(fbDb, PAYMENTS), where("userId", "==", fbAuth.currentUser.uid))
-      : null;
-    if (paymentsQuery) {
+      // Listen to minutes of meeting
+      unsubscribers.push(
+        onSnapshot(collection(fbDb, MINUTES), (snap) => {
+          const minutesList = snap.docs.map(d => ({ id: d.id, ...d.data() } as MinutesOfMeeting));
+          setData(prev => ({ ...prev, minutes: minutesList }));
+        }, onError)
+      );
+
+      // Listen to payments — filtered by the current user's uid so the
+      // rule (resource.data.userId == request.auth.uid || isAdmin()) is
+      // satisfied for ALL documents returned, preventing permission-denied.
+      const paymentsQuery = query(collection(fbDb, PAYMENTS), where("userId", "==", uid));
       unsubscribers.push(
         onSnapshot(paymentsQuery, (snap) => {
           const paymentsList = snap.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
           setData(prev => ({ ...prev, payments: paymentsList }));
-        })
+        }, onError)
       );
     }
 
-    // Auth state listener
+    let listenersAttached = false;
+
+    // Auth state listener — gates ALL Firestore listeners
     unsubscribers.push(
-      onAuthStateChanged(auth!, async (firebaseUser) => {
+      onAuthStateChanged(fbAuth, async (firebaseUser) => {
         if (firebaseUser) {
-          const userDoc = await getDoc(doc(db!, USERS, firebaseUser.uid));
+          const userDoc = await getDoc(doc(fbDb, USERS, firebaseUser.uid));
           if (userDoc.exists()) {
             const userData = { id: userDoc.id, ...userDoc.data() } as User;
             setData(prev => ({ ...prev, currentUser: userData }));
+          }
+          // Attach Firestore collection listeners only once, after auth is confirmed
+          if (!listenersAttached) {
+            listenersAttached = true;
+            attachCollectionListeners(firebaseUser.uid);
           }
         } else {
           setData(prev => ({ ...prev, currentUser: null }));

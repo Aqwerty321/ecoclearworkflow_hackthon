@@ -24,15 +24,25 @@
  *   the null-ydoc window entirely.
  */
 
+import { Extension } from "@tiptap/core";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import Highlight from "@tiptap/extension-highlight";
 import Collaboration from "@tiptap/extension-collaboration";
-import CollaborationCursor from "@tiptap/extension-collaboration-cursor";
+// NOTE: We intentionally do NOT use @tiptap/extension-collaboration-cursor.
+// That package (v3.0.0) imports yCursorPlugin from y-prosemirror, which uses
+// a DIFFERENT ySyncPluginKey instance than @tiptap/extension-collaboration
+// (which imports ySyncPlugin from @tiptap/y-tiptap). ProseMirror PluginKeys
+// use referential identity, so the cursor plugin cannot find the sync state
+// and crashes with "Cannot read properties of undefined (reading 'doc')".
+// Instead, we build a minimal Tiptap extension wrapping yCursorPlugin from
+// @tiptap/y-tiptap, which shares the same ySyncPluginKey.
+import { yCursorPlugin, defaultCursorBuilder, defaultSelectionBuilder } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 import { WebrtcProvider } from "y-webrtc";
 import { HocuspocusProvider } from "@hocuspocus/provider";
+import { HocuspocusProviderWebsocket } from "@hocuspocus/provider";
 import { IndexeddbPersistence } from "y-indexeddb";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -220,12 +230,23 @@ function CollaborativeEditorCore({
     const doc = new Y.Doc();
 
     const syncProvider: WebrtcProvider | HocuspocusProvider = wsUrl
-      ? new HocuspocusProvider({
-          url: wsUrl,
-          name: `ecoclear-mom-${documentId}`,
-          document: doc,
-          token: hocuspocusToken || "ecoclear-collab-dev-secret",
-        })
+      ? (() => {
+          // Create a separate websocket provider to configure reconnect limits.
+          // maxAttempts lives on HocuspocusProviderWebsocket, not on HocuspocusProvider.
+          const ws = new HocuspocusProviderWebsocket({
+            url: wsUrl,
+            maxAttempts: 5,
+            onClose: () => {
+              console.info('[EcoClear] Hocuspocus connection closed — falling back to local persistence.');
+            },
+          });
+          return new HocuspocusProvider({
+            websocketProvider: ws,
+            name: `ecoclear-mom-${documentId}`,
+            document: doc,
+            token: hocuspocusToken || "ecoclear-collab-dev-secret",
+          });
+        })()
       : new WebrtcProvider(`ecoclear-mom-${documentId}`, doc, {
           signaling: ["wss://signaling.yjs.dev"],
         });
@@ -289,12 +310,24 @@ function CollaborativeEditorCore({
       Highlight.configure({ multicolor: true }),
       // Note: Underline is included in StarterKit v3 by default — no need to add it explicitly
       Collaboration.configure({ document: ydoc }),
-      CollaborationCursor.configure({
-        provider,
-        user: {
-          name: userName,
-          color: cursorColor,
-          role: userRole ?? "",
+      // Custom cursor extension using @tiptap/y-tiptap's yCursorPlugin
+      // (shares the same ySyncPluginKey as the Collaboration extension)
+      Extension.create({
+        name: "collaborationCursor",
+        addProseMirrorPlugins() {
+          const awareness = provider.awareness;
+          if (!awareness) return [];
+          awareness.setLocalStateField("user", {
+            name: userName,
+            color: cursorColor,
+            role: userRole ?? "",
+          });
+          return [
+            yCursorPlugin(awareness, {
+              cursorBuilder: defaultCursorBuilder,
+              selectionBuilder: defaultSelectionBuilder,
+            }),
+          ];
         },
       }),
     ],
