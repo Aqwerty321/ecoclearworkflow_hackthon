@@ -104,10 +104,10 @@ function SidebarUserProfile() {
 
   const initials = currentUser.name.split(" ").map(n => n[0]).slice(0, 2).join("").toUpperCase();
   const roleColors: Record<string, string> = {
-    Admin: "bg-amber-500/20 text-amber-300",
-    "Project Proponent": "bg-blue-500/20 text-blue-300",
-    "Scrutiny Team": "bg-emerald-500/20 text-emerald-300",
-    "MoM Team": "bg-purple-500/20 text-purple-300",
+    Admin: "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+    "Project Proponent": "bg-blue-500/15 text-blue-700 dark:text-blue-300",
+    "Scrutiny Team": "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+    "MoM Team": "bg-purple-500/15 text-purple-700 dark:text-purple-300",
   };
 
   return (

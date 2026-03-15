@@ -44,15 +44,15 @@
     --chart-5: 350 65% 55%;
 
     /* Sidebar */
-    --sidebar-background: 215 28% 10%;
-    --sidebar-foreground: 210 40% 92%;
-    --sidebar-primary: 210 100% 45%;
+    --sidebar-background: 210 20% 97%;
+    --sidebar-foreground: 222 47% 15%;
+    --sidebar-primary: 210 100% 25%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 215 25% 16%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 215 25% 18%;
-    --sidebar-ring: 210 100% 45%;
-    --sidebar-muted: 215 20% 55%;
+    --sidebar-accent: 210 30% 91%;
+    --sidebar-accent-foreground: 222 47% 15%;
+    --sidebar-border: 214 32% 88%;
+    --sidebar-ring: 210 100% 25%;
+    --sidebar-muted: 215 16% 46%;
 
     /* Glass */
     --glass-bg: 0 0% 100% / 0.7;
