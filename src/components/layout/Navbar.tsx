@@ -66,7 +66,7 @@ export function Navbar() {
         <div className="flex items-center gap-0.5 ml-1 border-l pl-2 border-border/50">
           <ThemeToggle />
           <Button variant="ghost" size="icon" asChild title="GitHub Profile" className="h-9 w-9">
-            <a href="https://github.com/lalitheswar09-data" target="_blank" rel="noopener noreferrer">
+            <a href="https://github.com/Aqwerty321/ecoclearworkflow_hackthon" target="_blank" rel="noopener noreferrer">
               <Github className="h-4 w-4" />
             </a>
           </Button>

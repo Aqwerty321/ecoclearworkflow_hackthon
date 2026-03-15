@@ -116,7 +116,7 @@ export default function Home() {
           
           <div className="pt-2 animate-slide-up delay-400">
             <Button variant="outline" asChild className="gap-2 rounded-full">
-              <a href="https://github.com/lalitheswar09-data" target="_blank" rel="noopener noreferrer">
+              <a href="https://github.com/Aqwerty321/ecoclearworkflow_hackthon" target="_blank" rel="noopener noreferrer">
                 <Github className="h-4 w-4" />
                 View Developer GitHub
               </a>
