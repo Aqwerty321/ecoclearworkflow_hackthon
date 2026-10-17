@@ -206,3 +206,7 @@ CHANGELOG.md        Detailed change log for the v2.0 upgrade
 ## Status and limitations
 
 This is a hackathon prototype. Aadhaar eKYC (demo mode), CCA eSign and the Sentinel-2 NDVI data are mocks, UPI payment is a deep link and QR code rather than a live gateway, and GIS checks run in memory against a fixed list of zones (a PostGIS service is sketched but commented out in `docker-compose.yml`).
+
+## License
+
+MIT. See [LICENSE](LICENSE).

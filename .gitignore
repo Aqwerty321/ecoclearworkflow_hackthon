@@ -26,3 +26,8 @@ Thumbs.db
 # Vercel / Firebase deploy
 .vercel
 .firebase/
+
+# Collaboration service runtime state (created at runtime)
+services/collaboration-service/data/
+services/collaboration-service/tunnel.json
+services/collaboration-service/discovery_tunnel.json
