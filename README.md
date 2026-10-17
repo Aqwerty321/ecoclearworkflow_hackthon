@@ -1,330 +1,208 @@
 # EcoClear Workflow
 
-> AI-powered, role-based platform for digitising India's Environmental Clearance (EC) process — from application submission and document scrutiny through committee review to final EC approval.
+A role-based web portal that digitises India's Environmental Clearance (EC) process, from the first application filed by a project proponent to the signed and finalised Minutes of Meeting.
 
-Built for the **Chhattisgarh Environment Conservation Board (CECB)** as a hackathon submission.
+It was built as a hackathon submission for the Chhattisgarh Environment Conservation Board (CECB) problem statement "Role Based Environmental Clearance System" (PARIVESH 3.0 context). The app pairs a Next.js and Firebase frontend with optional Python microservices for AI scrutiny and GIS analysis, and a WebSocket service for real-time collaborative editing. AI is used as a copilot: every generated summary, gist and draft lands in an editable form that an officer reviews before anything is saved.
 
----
+## Features by role
+
+**Project proponent**
+- Multi-step application form for Category A, B1 and B2 projects, with a site location picker on a Leaflet map and a district selector
+- Sector and category based document checklist shown while filling the form
+- Aadhaar eKYC step with a demo mode and a live mode that sends a real SMS OTP through Firebase Phone Auth
+- UPI fee payment with an NPCI-style deep link and QR code (A: ₹50,000, B1: ₹25,000, B2: ₹15,000)
+- Document upload with a SHA-256 hash computed at upload and checked later for tampering
+- Status timeline across all workflow stages, plus a public `/status` page that needs no login
+
+**Scrutiny team**
+- Scrutiny pool filtered by role and by assigned sector and district (RBAC plus ABAC)
+- AI document scrutiny and a sector-specific regulatory compliance check with severity and regulation references
+- GIS proximity check against Chhattisgarh eco-sensitive zones and a Sentinel-2 NDVI view (mock data)
+- Raise EDS (Essential Document Sought) comments or refer the application to a meeting after reviewing an AI-drafted gist
+
+**MoM team**
+- Meeting desk filtered by sector and district
+- Collaborative Minutes of Meeting editor (TipTap and Yjs) with live multi-user sync
+- AI draft of the minutes into a structured form (decision, summary, conditions) that the officer edits
+- Template variables (`{{variable}}`), eSign with an OTP mock, and export to PDF or DOCX
+
+**Admin**
+- User management with role and ABAC attribute assignment
+- Industry sector management (14 sectors seeded) and MoM template management
+- Analytics dashboard: SLA compliance rate, sector distribution, monthly trend and per-stage bottlenecks
+
+**Everyone signed in**
+- SLA badges (on track, due soon, overdue) on application lists
+- RegBot, a multi-turn chat assistant for CECB and EC regulation questions
+- Light and dark themes
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│  Next.js 15.5 Frontend (port 9002)                          │
-│  App Router · TypeScript · Tailwind CSS · shadcn/ui         │
-│  Firebase Auth + Firestore (real-time onSnapshot listeners) │
-│  Firebase Storage (document uploads, SHA-256 verified)      │
-└──────────────┬──────────────────────────────────────────────┘
-               │ REST / WebSocket
-    ┌──────────┼──────────────────────────┐
-    ▼          ▼                          ▼
-┌────────┐  ┌──────────────┐  ┌────────────────────┐
-│ AI     │  │ GIS Service  │  │ Collaboration      │
-│ Agent  │  │ (port 8002)  │  │ Service (port 8003)│
-│ Service│  │ FastAPI      │  │ Hocuspocus/Yjs     │
-│:8001   │  │ Shapely      │  │ Node.js + SQLite   │
-│FastAPI │  │ GeoPandas    │  │ CRDT sync for MoM  │
-│LangGraph│ │ Sentinel-2   │  │ editor             │
-│Gemini  │  │ NDVI mock    │  └────────────────────┘
-└────────┘  └──────────────┘
+```mermaid
+flowchart LR
+    UI["Next.js 15 app (port 9002)<br/>Genkit flows with Gemini 2.5 Flash"]
+    FB[("Firebase Auth, Firestore, Storage<br/>or localStorage in demo mode")]
+    AI["ai-agent-service :8001<br/>FastAPI + LangGraph"]
+    GIS["gis-service :8002<br/>FastAPI + Shapely + GeoPandas"]
+    COL["collaboration-service :8003<br/>Hocuspocus + Yjs + SQLite"]
+    UI --- FB
+    UI -- "/api/proxy/ai-agent" --> AI
+    UI -- "/api/proxy/gis" --> GIS
+    UI -- WebSocket --> COL
+    AI -.-> GIS
 ```
 
-**Dual-mode store:** Firebase Firestore when configured; localStorage fallback for offline/demo mode.
+- **Dual-mode store.** When the Firebase variables are set, data lives in Firestore with real-time `onSnapshot` listeners. Without them the app runs on localStorage, so it can be demoed offline.
+- **Optional services.** The Next.js app proxies calls to the Python services through its own API routes and still works when they are not running.
+- **Collaboration fallback.** The MoM editor connects to the Hocuspocus server when a WebSocket URL is available, otherwise it syncs peer to peer over WebRTC, and it always keeps a local IndexedDB copy.
 
----
+### AI scrutiny pipeline (LangGraph)
 
-## Tech Stack
+`services/ai-agent-service` runs a graph of five nodes: ingestion, regulatory analyzer, validation and draft, reflector, and an EDS generator that only runs when the reflector decides an EDS is required. It returns `overall_risk` (LOW, MEDIUM, HIGH or CRITICAL), `compliance_score`, `compliance_issues`, `missing_documents`, `recommendations` and `reflector_quality_score`.
+
+Endpoints: `POST /api/scrutiny/analyze`, `POST /api/eds/generate`, `POST /api/compliance/check`, `GET /health`.
+
+### GIS service
+
+`services/gis-service` checks a project site against 8 Chhattisgarh eco-sensitive zones (national parks, tiger reserves, wildlife sanctuaries, a reserve forest and the Mahanadi corridor) using category buffers of 10 km (A), 5 km (B1) and 2 km (B2). Endpoints: `/api/gis/proximity`, `/api/gis/buffer`, `/api/gis/intersection` and `/api/gis/satellite`. The satellite endpoint returns mock Sentinel-2 NDVI data.
+
+## Workflow
+
+| Stage | Actor | Key actions |
+|---|---|---|
+| Draft | Proponent | Fill the form, attach documents |
+| Submitted | Proponent | Pay the application fee (UPI) |
+| UnderScrutiny | Scrutiny | AI analysis, EDS comments |
+| EDS | Proponent | Respond to EDS queries, then resubmit |
+| Referred | MoM team | Schedule the meeting, edit the gist |
+| MoMGenerated | MoM team | Collaborative MoM drafting, eSign |
+| Finalized | MoM team | Export PDF or DOCX |
+
+Allowed transitions are enforced in `src/lib/types.ts`: Draft to Submitted, Submitted to UnderScrutiny, UnderScrutiny to EDS or Referred, EDS back to Submitted, Referred to MoMGenerated, and MoMGenerated to Finalized.
+
+## Tech stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 15.5 (App Router, Turbopack) |
-| Language | TypeScript 5 |
-| Styling | Tailwind CSS 3.4 + shadcn/ui |
-| Auth & DB | Firebase Auth + Firestore v11 |
-| Storage | Firebase Storage (20 MB cap, PDF/image) |
-| State | React Context + `onSnapshot` real-time listeners |
-| AI | Google Genkit + Gemini 2.5 Flash (scrutiny, MoM draft, gist) |
-| AI Microservice | FastAPI + LangGraph + `langchain-google-genai` |
-| GIS Microservice | FastAPI + Shapely + GeoPandas + Sentinel-2 NDVI mock |
-| Collaboration | Hocuspocus WebSocket server + Yjs CRDT (TipTap editor) |
-| India Stack | Aadhaar eKYC mock + CCA eSign OTP mock |
-| Payments | UPI deep-link (NPCI spec) + QR code |
-| Document Integrity | SHA-256 hash at upload, verified on retrieval |
-| Exports | jsPDF (page-break-aware) + docx |
-| Orchestration | Docker Compose (all 4 services) |
-| Deployment | Vercel (Next.js) + Cloud Run (Python services) |
+| Frontend | Next.js 15 (App Router, Turbopack), React 19, TypeScript, Tailwind CSS, shadcn/ui, Recharts |
+| Auth, data, files | Firebase Auth, Firestore, Firebase Storage |
+| AI in the app | Google Genkit with Gemini 2.5 Flash |
+| AI service | Python, FastAPI, LangGraph, `langchain-google-genai`, optional LangSmith tracing |
+| GIS | Leaflet on the client; FastAPI, Shapely, GeoPandas, pyproj in the service |
+| Collaboration | Hocuspocus, Yjs, TipTap, y-webrtc, y-indexeddb, SQLite |
+| Exports | jsPDF, docx |
+| Infra | Docker Compose, Vercel config (`vercel.json`), Firebase rules and indexes |
 
----
-
-## Features by Role
-
-### Project Proponent
-- Submit Category A / B1 / B2 environmental clearance applications
-- Aadhaar eKYC identity verification (OTP mock)
-- UPI payment (QR + deep-link, ₹50k / ₹25k / ₹15k by category)
-- Upload documents with real SHA-256 integrity hashing
-- Track application status through 7 workflow stages
-- Download final EC (PDF / DOCX)
-
-### Scrutiny Team
-- ABAC-filtered scrutiny pool (sector + district assignment)
-- Accept applications → trigger AI compliance analysis (LangGraph pipeline)
-- View GIS proximity analysis and Sentinel-2 NDVI satellite data
-- Issue EDS (Environmental Data Supplement) comments
-- Refer applications to the Expert Appraisal Committee
-
-### MoM Team
-- ABAC-filtered meeting desk (sector + district assignment)
-- Schedule Expert Appraisal Committee meetings
-- AI-generated meeting gist → CRDT collaborative editor (real-time multi-user)
-- Template-driven MoM drafting with `{{variable}}` substitution engine
-- Digital eSign (CCA OTP mock) → finalize → export PDF/DOCX
-
-### Admin
-- User management (assign roles + ABAC attributes)
-- Industry sector CRUD (14 sectors seeded)
-- MoM template management
-- Pipeline status dashboard with live counts
-
----
-
-## Quick Start
+## Getting started
 
 ### Prerequisites
-- Node.js 20+ (recommend [nvm](https://github.com/nvm-sh/nvm): `nvm use 22`)
-- Python 3.11+ (for microservices)
-- Docker & Docker Compose (for microservices)
-- Firebase project with Firestore, Auth, Storage enabled
 
-### 1. Clone & install
+- Node.js 20 or newer (the Dockerfile and seed script use Node 22)
+- Python 3.11 or newer for the microservices (their Docker images use 3.12)
+- Docker and Docker Compose, if you want to run the services in containers
+- A Firebase project with Auth, Firestore and Storage enabled (optional, see demo mode below)
+
+### 1. Install and configure
 
 ```bash
 git clone https://github.com/Aqwerty321/ecoclearworkflow_hackthon.git
 cd ecoclearworkflow_hackthon
 npm install --legacy-peer-deps
+cp .env.local.example .env.local
 ```
 
-### 2. Environment variables
+Fill in `.env.local`. The variables are:
 
-Create `.env.local` in the project root:
+- Firebase: `NEXT_PUBLIC_FIREBASE_API_KEY`, `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`, `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET`, `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID`, `NEXT_PUBLIC_FIREBASE_APP_ID`, `NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID`
+- Gemini for Genkit flows: `GOOGLE_GENAI_API_KEY`
+- India Stack mock switch and UPI payee: `NEXT_PUBLIC_INDIA_STACK_MOCK`, `NEXT_PUBLIC_CECB_UPI_VPA`
+- Microservices (optional): `AI_AGENT_SERVICE_URL`, `GIS_SERVICE_URL`, `COLLABORATION_SERVICE_URL`
+- Collaborative editor (optional): `NEXT_PUBLIC_COLLAB_WS_URL`, or `NEXT_PUBLIC_COLLAB_DISCOVERY_URL` when using the tunnel setup below
+- LangSmith (optional): `LANGCHAIN_TRACING_V2`, `LANGCHAIN_PROJECT`, `LANGCHAIN_API_KEY`
 
-```env
-# Firebase (required)
-NEXT_PUBLIC_FIREBASE_API_KEY=your_api_key
-NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=your_project.firebaseapp.com
-NEXT_PUBLIC_FIREBASE_PROJECT_ID=your_project_id
-NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=your_project.firebasestorage.app
-NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=your_sender_id
-NEXT_PUBLIC_FIREBASE_APP_ID=your_app_id
+If you leave the Firebase variables empty, the app runs in demo mode on localStorage.
 
-# Google AI (for Genkit flows)
-GOOGLE_GENAI_API_KEY=your_gemini_api_key
-
-# India Stack (set to true to use mock mode — default)
-NEXT_PUBLIC_INDIA_STACK_MOCK=true
-
-# UPI payee VPA
-NEXT_PUBLIC_CECB_UPI_VPA=cecb.collection@sbi
-
-# Microservice URLs (optional — app works without them)
-AI_AGENT_SERVICE_URL=http://localhost:8001
-GIS_SERVICE_URL=http://localhost:8002
-COLLABORATION_SERVICE_URL=http://localhost:8003
-
-# Collaborative editor WebSocket (optional)
-NEXT_PUBLIC_COLLAB_WS_URL=ws://localhost:8003
-```
-
-### 3. Deploy Firebase rules & seed data
+### 2. Firebase rules and seed data (optional)
 
 ```bash
-# Install Firebase CLI (once)
 npm install -g firebase-tools
-
-# Login
 firebase login
-
-# Deploy Firestore rules, indexes, Storage rules
 firebase deploy --only firestore:rules,firestore:indexes,storage
-
-# Seed users, sectors, and demo applications
 node scripts/seed-firestore.mjs
 ```
 
-### 4. Run the app
+The seeder reads the API key from `.env.local`, is safe to re-run, and creates the demo users, the 14 sectors and four demo applications. Note that it currently targets the project ID set in the script and in `.firebaserc`, so change both to point at your own Firebase project.
+
+### 3. Run the web app
 
 ```bash
-# Next.js dev server (port 9002)
-npm run dev
-
-# (Optional) Genkit AI dev UI
-npm run genkit:dev
+npm run dev          # http://localhost:9002
+npm run genkit:dev   # optional Genkit developer UI
+npm run typecheck
+npm run build
 ```
 
-### 5. Run microservices (optional, via Docker)
+### 4. Run the microservices (optional)
+
+With Docker Compose (services `frontend`, `ai-agent`, `gis-service`, `collaboration`):
 
 ```bash
+cp services/ai-agent-service/.env.example services/ai-agent-service/.env   # set GOOGLE_API_KEY
+cp services/gis-service/.env.example services/gis-service/.env
 docker compose up --build
 ```
 
-Individual services:
+Or one at a time:
+
 ```bash
-# AI agent service
 cd services/ai-agent-service && pip install -r requirements.txt && uvicorn app.main:app --port 8001
-
-# GIS service
 cd services/gis-service && pip install -r requirements.txt && uvicorn app.main:app --port 8002
-
-# Collaboration service
 cd services/collaboration-service && npm install && npm start
 ```
 
----
+To expose the collaboration server to a deployed frontend, `npm run start:all` in `services/collaboration-service` starts Hocuspocus, a small discovery server on port 4000 and two Cloudflare quick tunnels (requires `cloudflared`).
 
-## Demo Credentials (seeded via `scripts/seed-firestore.mjs`)
+## Demo data
+
+Seeded accounts (from `scripts/seed-firestore.mjs`). In demo mode without Firebase, any password is accepted for these emails.
 
 | Role | Email | Password |
 |---|---|---|
 | Admin | `admin@ecoclear.gov` | `Admin@1234` |
-| Project Proponent | `john@builder.com` | `John@12345` |
-| Scrutiny Team | `sarah@ecoclear.gov` | `Sarah@1234` |
-| MoM Team | `mike@ecoclear.gov` | `Mike@12345` |
+| Project proponent | `john@builder.com` | `John@12345` |
+| Scrutiny team | `sarah@ecoclear.gov` | `Sarah@1234` |
+| MoM team | `mike@ecoclear.gov` | `Mike@12345` |
 
-**Note:** In offline/demo mode (no Firebase env vars), any password is accepted for these accounts.
+Seeded applications cover each part of the workflow: `demo-app-draft-001` (Draft, Durg Sponge Iron Unit, B1), `demo-app-scrutiny-001` (UnderScrutiny, Raipur Coal Beneficiation Plant, A), `demo-app-referred-001` (Referred, Bilaspur Cement Grinding Unit, B1) and `demo-app-finalized-001` (Finalized, Korba Thermal Power Extension, A). They come with linked documents, EDS comments, a meeting gist and a signed MoM.
 
----
+## Security rules summary
 
-## Demo Applications (seeded)
-
-| Application ID | Status | Project | Category |
-|---|---|---|---|
-| `demo-app-draft-001` | Draft | Durg Sponge Iron Unit | B1 |
-| `demo-app-scrutiny-001` | UnderScrutiny | Raipur Coal Beneficiation Plant | A |
-| `demo-app-referred-001` | Referred | Bilaspur Cement Grinding Unit | B1 |
-| `demo-app-finalized-001` | Finalized | Korba Thermal Power Extension | A |
-
-The seeded applications include linked documents, EDS comments, a meeting gist, and a signed Minutes of Meeting — covering every stage of the workflow.
-
----
-
-## Workflow Stages
-
-```
-Draft → Submitted → UnderScrutiny → EDS → Referred → MoMGenerated → Finalized
-```
-
-| Stage | Actor | Key Actions |
+| Collection | Read | Write |
 |---|---|---|
-| Draft | Proponent | Fill form, attach documents |
-| Submitted | Proponent | Pay application fee (UPI) |
-| UnderScrutiny | Scrutiny | AI analysis, EDS comments |
-| EDS | Proponent | Respond to EDS queries |
-| Referred | MoM Team | Schedule meeting, write gist |
-| MoMGenerated | MoM Team | Collaborative MoM drafting, eSign |
-| Finalized | MoM Team | Export PDF/DOCX |
+| `users` | Signed in | Create own profile; update by owner or Admin; delete by Admin |
+| `applications` | Signed in | Create by applicant; update by owner, Scrutiny, MoM or Admin; delete by Admin |
+| `documents` | Signed in | Create by any signed-in user; update by Scrutiny; delete by Admin |
+| `sectors`, `templates` | Signed in | Admin |
+| `edsComments` | Signed in | Create by Scrutiny; update and delete by Admin |
+| `meetingGists` | Signed in | MoM or Scrutiny |
+| `payments` | Owner or Admin | Create by signed-in user; update and delete by Admin |
+| `minutesOfMeeting` | Signed in | MoM or Admin |
 
----
+See `firestore.rules` and `storage.rules` for the full rules.
 
-## Project Structure
-
-```
-ecoclearworkflow_hackthon/
-├── src/
-│   ├── app/
-│   │   ├── page.tsx                    # Login
-│   │   ├── register/                   # Registration
-│   │   ├── forgot-password/            # Password reset
-│   │   └── dashboard/
-│   │       ├── page.tsx                # Role-aware home
-│   │       ├── admin/                  # Admin hub + users/sectors/templates
-│   │       ├── applications/[id]/      # Application detail (5 tabs)
-│   │       ├── my-applications/        # Proponent application list
-│   │       ├── proponent/new/          # New application form
-│   │       ├── scrutiny/               # Scrutiny pool (ABAC filtered)
-│   │       └── mom/                    # Meeting desk + CRDT editor
-│   ├── ai/flows/                       # Genkit AI flows
-│   │   ├── scrutiny-document-summary-and-flagging.ts
-│   │   ├── generate-meeting-gist.ts
-│   │   └── generate-minutes-of-meeting-draft.ts
-│   ├── components/
-│   │   ├── CollaborativeEditor.tsx     # TipTap + Yjs CRDT editor
-│   │   ├── MapPicker.tsx               # Leaflet GIS map picker
-│   │   ├── UPIPayment.tsx              # NPCI UPI deep-link + QR
-│   │   ├── AadhaarEKYC.tsx             # Aadhaar OTP mock
-│   │   ├── ESignDocument.tsx           # CCA eSign OTP mock
-│   │   ├── ApplicationTimeline.tsx     # Status timeline
-│   │   └── ui/                         # shadcn/ui + animated primitives
-│   └── lib/
-│       ├── StoreContext.tsx            # Firebase + localStorage dual-mode store
-│       ├── types.ts                    # Types + ABAC policy engine
-│       ├── firebase.ts                 # Firebase SDK init
-│       ├── api-client.ts               # Microservice REST clients
-│       ├── crypto.ts                   # SHA-256 document hashing
-│       ├── india-stack.ts              # Aadhaar/eSign mock
-│       └── template-vars.ts           # {{variable}} substitution engine
-├── services/
-│   ├── ai-agent-service/               # FastAPI + LangGraph + Gemini
-│   ├── gis-service/                    # FastAPI + Shapely + GeoPandas
-│   └── collaboration-service/          # Hocuspocus WebSocket server
-├── scripts/
-│   └── seed-firestore.mjs              # Idempotent Firebase seeder
-├── firebase.json                       # Firebase CLI config
-├── firestore.rules                     # Firestore security rules (RBAC)
-├── firestore.indexes.json              # Composite indexes
-├── storage.rules                       # Firebase Storage rules
-└── docker-compose.yml                  # All 4 services orchestrated
-```
-
----
-
-## Firebase Security Rules Summary
-
-| Collection | Read | Create | Update | Delete |
-|---|---|---|---|---|
-| `users` | Authenticated | Own UID | Own or Admin | Admin |
-| `applications` | Authenticated | Own applicantId | Owner / Scrutiny / MoM / Admin | Admin |
-| `documents` | Authenticated | Authenticated | Scrutiny/Admin | Admin |
-| `sectors` | Authenticated | — | Admin | Admin |
-| `edsComments` | Authenticated | Scrutiny/Admin | Admin | Admin |
-| `meetingGists` | Authenticated | MoM/Scrutiny | MoM/Scrutiny | MoM/Scrutiny |
-| `templates` | Authenticated | — | Admin | Admin |
-| `payments` | Owner or Admin | Authenticated | Admin | Admin |
-| `minutesOfMeeting` | Authenticated | MoM/Admin | MoM/Admin | MoM/Admin |
-
----
-
-## AI Pipeline (LangGraph)
-
-The `ai-agent-service` runs a 4-node LangGraph pipeline for scrutiny analysis:
+## Project structure
 
 ```
-Ingestion Node → Regulatory Analyzer → Validation/Draft Node → Reflector
-                                                    ↓ (if requires_eds)
-                                              EDS Generator
+src/app/            Next.js routes: login, register, public status, dashboards, API routes
+src/ai/flows/       Genkit flows: scrutiny, compliance check, meeting gist, MoM draft, RegBot
+src/components/     Feature components (map picker, UPI, eKYC, eSign, editor) and ui/ primitives
+src/lib/            Store, types and ABAC policy, Firebase init, API client, hashing, GIS data
+services/           ai-agent-service, gis-service, collaboration-service
+scripts/            Firestore seeder
+docs/               Problem statement, product blueprint, upgrade plan
+CHANGELOG.md        Detailed change log for the v2.0 upgrade
 ```
 
-Outputs: `overall_risk` (LOW/MEDIUM/HIGH/CRITICAL), `compliance_score`, `compliance_issues[]`, `missing_documents[]`, `recommendations[]`, `reflector_quality_score`.
+## Status and limitations
 
----
-
-## GIS Service
-
-The `gis-service` provides:
-- **Proximity analysis** — buffer zones per category (A: 10km, B1: 5km, B2: 2km) against Chhattisgarh eco-sensitive zones
-- **Buffer intersection** — calculate overlap with protected areas
-- **Satellite NDVI** — Sentinel-2 vegetation index mock (NDVI mean, land use breakdown, trend)
-
----
-
-## Scripts Reference
-
-```bash
-npm run dev           # Next.js dev (port 9002, Turbopack)
-npm run build         # Production build
-npm run typecheck     # TypeScript type check (no emit)
-npm run genkit:dev    # Genkit AI dev UI
-
-node scripts/seed-firestore.mjs   # Seed/re-seed Firestore (idempotent)
-
-firebase deploy --only firestore:rules,firestore:indexes,storage
-```
+This is a hackathon prototype. Aadhaar eKYC (demo mode), CCA eSign and the Sentinel-2 NDVI data are mocks, UPI payment is a deep link and QR code rather than a live gateway, and GIS checks run in memory against a fixed list of zones (a PostGIS service is sketched but commented out in `docker-compose.yml`).
